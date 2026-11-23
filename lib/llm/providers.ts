@@ -19,7 +19,8 @@ export class ProviderError extends Error {
   }
 }
 
-const TIMEOUT_MS = 5 * 60_000;
+// Showstopper arrangements written in parallel can take 6–8 minutes each; give them room.
+const TIMEOUT_MS = 15 * 60_000;
 const HOME = os.homedir();
 const SEARCH_DIRS = [
   ...(process.env.PATH ?? "").split(path.delimiter),

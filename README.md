@@ -22,7 +22,8 @@ The tab is drawn by code, never by the model, so every fret number on screen has
 | 🎚️ **Steerable** | Optional controls: style, flair (clean → showstopper), level, reharmonization (none → bold), melody fidelity (exact / embellished / free), fretboard area. |
 | 🔁 **Editable** | Click any chord for 5 reharmonizations, previewed in context. Ask for revisions in plain words ("bar 6 is too much of a stretch"). Retake a direction, undo anything. |
 | 🎧 **Playable & readable** | Tab with rhythm stems or tab + staff, chord diagrams, guitar soundfonts (nylon, steel, jazz, clean), tempo trainer, metronome, count-in, looping, zoom, bars per line, full-screen practice view. |
-| 📚 **Library** | Every arrangement you generate is saved automatically and searchable. |
+| 📚 **Library** | Every arrangement you generate is saved automatically. Browse them as cards and filter by texture or by verified vs. from-memory melody. |
+| 🏛️ **Classical catalogue** | Optional local copy of [ClassTab.org](https://www.classtab.org/)'s ~4,000 classical guitar tabs: browse by composer, read the tab, and turn any piece with MIDI into a verified arrangement. |
 
 ## 🧠 How it works
 
@@ -77,6 +78,15 @@ cd worker && uv sync --python 3.11
 
 Try an import with `examples/ode-to-joy.mid`.
 
+### Classical catalogue (ClassTab)
+
+```bash
+npm run classtab:update   # downloads ClassTab's monthly zip (~14 MB) into data/classtab and indexes it
+```
+
+The tabs belong to ClassTab and its transcribers. They stay on your machine (`data/` is git-ignored) and are for
+personal study. Open **Library → Classical** to browse them.
+
 ## ⏱️ What to expect
 
 | Request | Typical time |
@@ -85,7 +95,7 @@ Try an import with `examples/ode-to-joy.mid`.
 | One showstopper arrangement (slaps, harmonics, runs) | ~4 min |
 | Auto plan + 2–3 alternatives (parallel) | ~5–6 min |
 
-Generation runs on the local server, so reloading the page doesn't cancel it. Results land in the library.
+Generation runs as a background job on the local server. If you reload or close the tab, the page picks the job back up when it opens again, and every result is saved to the library.
 
 ## 📏 Quality, measured
 

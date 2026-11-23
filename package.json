@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "classtab:update": "tsx scripts/classtab-update.mts",
+    "classtab:index": "tsx scripts/classtab-index.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",

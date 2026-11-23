@@ -48,7 +48,7 @@ function Segmented<T extends string>({ legend, value, options, onChange }: { leg
   );
 }
 
-export function Composer({ busy, onSubmit }: { busy: boolean; onSubmit: (input: ComposerInput) => void }) {
+export function Composer({ busy, onSubmit, initialFile }: { busy: boolean; onSubmit: (input: ComposerInput) => void; initialFile?: File | null }) {
   const [request, setRequest] = useState("");
   const [direction, setDirection] = useState("");
   const [style, setStyle] = useState("auto");
@@ -60,7 +60,7 @@ export function Composer({ busy, onSubmit }: { busy: boolean; onSubmit: (input: 
   const [alternatives, setAlternatives] = useState(2);
   const [position, setPosition] = useState(POSITIONS[0]);
   const [texture, setTexture] = useState<Controls["texture"]>("fingerstyle");
-  const [source, setSource] = useState<"describe" | "import">("describe");
+  const [source, setSource] = useState<"describe" | "import">(initialFile ? "import" : "describe");
   const [tune, setTune] = useState<Tune | null>(null);
 
   const finalStyle = custom.trim() || style;
@@ -121,7 +121,7 @@ export function Composer({ busy, onSubmit }: { busy: boolean; onSubmit: (input: 
           </>
         ) : (
           <>
-            <TuneImport tune={tune} onTune={setTune} />
+            <TuneImport tune={tune} onTune={setTune} initialFile={initialFile} />
             <p className="mt-2 text-xs leading-relaxed text-ink-3">
               Imported tunes are arranged as fingerstyle tab, and every melody note is checked against the file.
             </p>

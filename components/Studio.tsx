@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReharmOption, SavedSong, Song } from "@/lib/ir/schema";
 import { DEMO_SONG } from "@/lib/ir/demo";
 import { findChord, replaceChord } from "@/lib/ir/edit";
@@ -13,10 +13,12 @@ import { ReharmPanel } from "./ReharmPanel";
 import { ScoreView, type LoopRange } from "./ScoreView";
 import { StudyNotes } from "./StudyNotes";
 import { Alternatives, ReviewPanel, type Candidate } from "./Review";
+import { LibraryView } from "./LibraryView";
 import type { ArrangementPlan, Direction } from "@/lib/arrange/plan";
 
 type Preview = { chordId: string; option: ReharmOption; index: number };
 export type ProviderId = "claude" | "codex" | "anthropic-api";
+const JOB_KEY = "fsai.pendingJob";
 const PROVIDER_LABEL: Record<ProviderId, string> = { claude: "Claude", codex: "Codex", "anthropic-api": "Claude API" };
 
 export function Studio() {
@@ -45,6 +47,10 @@ export function Studio() {
   const [analysis, setAnalysis] = useState<ArrangementPlan["analysis"] | null>(null);
   const [failed, setFailed] = useState(0);
   const [direction, setDirection] = useState<Direction | null>(null);
+  const [job, setJob] = useState<{ label: string; stage: string; startedAt: number } | null>(null);
+  const [view, setView] = useState<"studio" | "library">("studio");
+  /** A file handed over from the library (ClassTab MIDI) to pre-load into the composer. */
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   useEffect(() => {
     fetch("/api/providers").then((r) => r.json()).then((a: Record<ProviderId, boolean>) => {
@@ -92,9 +98,69 @@ export function Studio() {
    * retake:   one fresh take of a given direction, added to the list
    * revise:   change the arrangement on screen (keeps undo history)
    */
-  async function arrange(input: ComposerInput, mode: { kind: "new" } | { kind: "retake"; direction: Direction } | { kind: "revise"; existing: Song } = { kind: "new" }) {
+  type Mode = { kind: "new" } | { kind: "retake"; direction: Direction } | { kind: "revise"; existing: Song };
+
+  /** Poll a background job until it finishes; returns its result. */
+  async function waitForJob(jobId: string) {
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 2500));
+      const res = await fetch(`/api/jobs/${jobId}`);
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error ?? "Lost track of the generation");
+      setJob({ label: j.label, stage: j.stage, startedAt: j.startedAt });
+      if (j.status === "done") return j.result;
+      if (j.status === "error") throw new Error(j.error);
+    }
+  }
+
+  function applyResult(data: { candidates: Candidate[]; analysis?: ArrangementPlan["analysis"] | null; failed?: unknown[] }, kind: Mode["kind"], input: ComposerInput | null) {
+    const got = data.candidates;
+    const best = got[0];
+    setWarnings(best.warnings ?? []);
+    setDirection(best.direction);
+    refreshLibrary();
+    setView("studio");
+    if (kind === "revise" && song) {
+      loadSong(best.song, { keepHistory: true, saved: best.savedId });
+      return;
+    }
+    if (input) setLastInput(input);
+    if (kind === "retake" && song) {
+      setCandidates((cs) => [...cs, ...got].sort((a, b) => b.review.overall - a.review.overall));
+      loadSong(best.song, { keepHistory: true, saved: best.savedId });
+    } else {
+      setCandidates(got);
+      setAnalysis(data.analysis ?? null);
+      setFailed(data.failed?.length ?? 0);
+      setTune(input?.tune ?? null);
+      loadSong(best.song, { saved: best.savedId });
+    }
+    setActiveCandidate(best.id);
+  }
+
+  async function runJob(jobId: string, kind: Mode["kind"], input: ComposerInput | null) {
+    setBusy(true);
+    try {
+      applyResult(await waitForJob(jobId), kind, input);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      setJob(null);
+      try { localStorage.removeItem(JOB_KEY); } catch {}
+    }
+  }
+
+  /**
+   * new:      plan + write `alternatives` arrangements, replace the candidate list
+   * retake:   one fresh take of a given direction, added to the list
+   * revise:   change the arrangement on screen (keeps undo history)
+   * Runs as a server job, so a reload doesn't lose it (see the resume effect).
+   */
+  async function arrange(input: ComposerInput, mode: Mode = { kind: "new" }) {
     setBusy(true);
     setError(null);
+    setJob({ label: "Starting…", stage: "Sending request…", startedAt: Date.now() });
     const existing = mode.kind === "revise" ? mode.existing : undefined;
     const keepTune = mode.kind !== "new" ? tune ?? undefined : undefined;
     try {
@@ -102,40 +168,35 @@ export function Studio() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...input, existing, provider, tune: input.tune ?? keepTune,
+          ...input, existing, provider, tune: input.tune ?? keepTune, background: true,
           direction: mode.kind === "retake" ? mode.direction : mode.kind === "revise" ? direction ?? undefined : undefined,
           alternatives: mode.kind === "new" ? input.alternatives : 1,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Request failed");
-      const got: Candidate[] = data.candidates;
-      const best = got[0];
-      setWarnings(best.warnings ?? []);
-      setDirection(best.direction);
-      refreshLibrary();
-      if (mode.kind === "revise") {
-        loadSong(best.song, { keepHistory: true, saved: best.savedId });
-      } else {
-        setLastInput(input);
-        if (mode.kind === "new") {
-          setCandidates(got);
-          setAnalysis(data.analysis ?? null);
-          setFailed(data.failed?.length ?? 0);
-          setTune(input.tune ?? null);
-          loadSong(best.song, { saved: best.savedId });
-        } else {
-          setCandidates((cs) => [...cs, ...got].sort((a, b) => b.review.overall - a.review.overall));
-          loadSong(best.song, { keepHistory: true, saved: best.savedId });
-        }
-        setActiveCandidate(best.id);
-      }
+      try { localStorage.setItem(JOB_KEY, JSON.stringify({ jobId: data.jobId, kind: mode.kind, input })); } catch {}
+      await runJob(data.jobId, mode.kind, input);
     } catch (e) {
       setError((e as Error).message);
-    } finally {
       setBusy(false);
+      setJob(null);
     }
   }
+
+  // Resume a generation that was running when the page was reloaded.
+  const resumed = useRef(false);
+  useEffect(() => {
+    if (resumed.current) return;
+    resumed.current = true;
+    let pending: { jobId: string; kind: Mode["kind"]; input: ComposerInput | null } | null = null;
+    try { pending = JSON.parse(localStorage.getItem(JOB_KEY) ?? "null"); } catch {}
+    if (pending?.jobId) {
+      const p = pending;
+      // Results of a revise/retake are shown as a new set, since the page state they modified is gone.
+      Promise.resolve().then(() => runJob(p.jobId, p.kind === "revise" || p.kind === "retake" ? "new" : p.kind, p.input));
+    }
+  });
 
   function listen(c: Candidate) {
     if (c.id !== activeCandidate) {
@@ -148,6 +209,7 @@ export function Studio() {
   }
 
   function openSaved(s: SavedSong) {
+    setView("studio");
     loadSong(s.song, { saved: s.id });
     setTune(s.tune ?? null);
     setDirection(s.direction ?? null);
@@ -223,11 +285,20 @@ export function Studio() {
   return (
     <div className="mx-auto max-w-[1440px] px-4 pb-24 sm:px-6">
       <header className="sticky top-0 z-20 -mx-4 mb-6 flex items-center gap-3 border-b border-line bg-bg/85 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
-        <button onClick={() => { setSong(null); setSelectedId(null); }} className="focus-ring flex items-center gap-2 rounded-lg" aria-label="Home">
+        <button onClick={() => { setSong(null); setSelectedId(null); setView("studio"); }} className="focus-ring flex items-center gap-2 rounded-lg" aria-label="Home">
           <Logo />
           <span className="font-display text-xl font-semibold tracking-tight">Fingerstyle AI</span>
         </button>
-        <span className="hidden text-sm text-ink-3 sm:inline">arrange · reharmonize · study</span>
+        <nav className="ml-2 flex rounded-full border border-line p-0.5 text-sm" aria-label="Sections">
+          {([["studio", "Studio"], ["library", `Library · ${library.length}`]] as const).map(([v, label]) => (
+            <button
+              key={v} aria-current={view === v ? "page" : undefined} onClick={() => { setView(v); if (v === "library") refreshLibrary(); }}
+              className={`focus-ring rounded-full px-3 py-1.5 transition ${view === v ? "bg-ink text-bg font-semibold" : "text-ink-2 hover:text-ink"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
         <div className="ml-auto flex items-center gap-2">
           <div className="flex rounded-full border border-line p-0.5 text-sm" role="radiogroup" aria-label="Model">
             {(Object.keys(PROVIDER_LABEL) as ProviderId[])
@@ -244,7 +315,7 @@ export function Studio() {
                 </button>
               ))}
           </div>
-          {song && (
+          {song && view === "studio" && (
             <>
               {lastInput && direction && (
                 <button onClick={() => arrange(lastInput, { kind: "retake", direction })} disabled={busy} title="Write a fresh take in the same direction and add it to the alternatives" className="focus-ring hidden h-9 rounded-full border border-line px-3 text-sm text-ink-2 hover:bg-surface-2 disabled:opacity-40 sm:block">
@@ -272,8 +343,23 @@ export function Studio() {
         </div>
       )}
 
-      {!song ? (
-        <Landing busy={busy} onSubmit={(i) => arrange(i)} onDemo={() => openSaved({ id: "", savedAt: "", song: DEMO_SONG })} library={library} onOpen={openSaved} onDelete={remove} />
+      {job && (
+        <div role="status" className="mb-4 flex items-center gap-3 rounded-xl border border-accent/30 bg-accent-soft px-4 py-3 text-sm">
+          <Spinner />
+          <span className="min-w-0 flex-1">
+            <b>{job.label}</b> <span className="text-ink-2">· {job.stage}</span>
+          </span>
+          <span className="shrink-0 font-mono text-xs text-ink-2">{Math.floor((Date.now() - job.startedAt) / 60000)}:{String(Math.floor(((Date.now() - job.startedAt) / 1000) % 60)).padStart(2, "0")}</span>
+        </div>
+      )}
+
+      {view === "library" ? (
+        <LibraryView
+          library={library} activeId={savedId} onOpen={openSaved} onDelete={remove}
+          onArrangeFile={(f) => { setPendingFile(f); setView("studio"); if (song) { setShowComposer(true); setSelectedId(null); } }}
+        />
+      ) : !song ? (
+        <Landing initialFile={pendingFile} busy={busy} onSubmit={(i) => arrange(i)} onDemo={() => openSaved({ id: "", savedAt: "", song: DEMO_SONG })} library={library} onOpen={openSaved} onDelete={remove} />
       ) : (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_400px]">
           <main className="min-w-0 space-y-6">
@@ -367,7 +453,7 @@ export function Studio() {
                 onClose={() => { setSelectedId(null); setPreview(null); setLoop(null); }}
               />
             ) : showComposer ? (
-              <Composer busy={busy} onSubmit={(i) => arrange(i)} />
+              <Composer key={pendingFile?.name} initialFile={pendingFile} busy={busy} onSubmit={(i) => arrange(i)} />
             ) : (
               <SidePanel library={library} onOpen={openSaved} onDelete={remove} activeId={savedId} />
             )}
@@ -454,7 +540,7 @@ function Library({ library, onOpen, onDelete, activeId }: { library: SavedSong[]
   );
 }
 
-function Landing(props: { busy: boolean; onSubmit: (i: ComposerInput) => void; onDemo: () => void; library: SavedSong[]; onOpen: (s: SavedSong) => void; onDelete: (id: string) => void }) {
+function Landing(props: { initialFile: File | null; busy: boolean; onSubmit: (i: ComposerInput) => void; onDemo: () => void; library: SavedSong[]; onOpen: (s: SavedSong) => void; onDelete: (id: string) => void }) {
   return (
     <div className="mx-auto grid max-w-6xl gap-10 pt-6 lg:grid-cols-[1fr_520px] lg:pt-14">
       <div className="rise">
@@ -474,7 +560,7 @@ function Landing(props: { busy: boolean; onSubmit: (i: ComposerInput) => void; o
         </div>
       </div>
       <div className="rise" style={{ animationDelay: "80ms" }}>
-        <Composer busy={props.busy} onSubmit={props.onSubmit} />
+        <Composer key={props.initialFile?.name} initialFile={props.initialFile} busy={props.busy} onSubmit={props.onSubmit} />
       </div>
     </div>
   );

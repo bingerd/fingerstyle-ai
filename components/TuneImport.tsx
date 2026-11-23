@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { guessMelodyTrack, midiName, toTune, type RawScore, type Tune } from "@/lib/tune/tune";
 import { rawFromAlphaTab, rawFromMidi } from "@/lib/tune/importers";
 import { loadAlphaTab } from "@/lib/client/alphatab";
@@ -28,7 +28,7 @@ async function rawFromFile(file: File): Promise<RawScore> {
 }
 
 /** Pick a file → choose the melody track and bar range → hands a Tune to the composer. */
-export function TuneImport({ tune, onTune }: { tune: Tune | null; onTune: (t: Tune | null) => void }) {
+export function TuneImport({ tune, onTune, initialFile }: { tune: Tune | null; onTune: (t: Tune | null) => void; initialFile?: File | null }) {
   const [raw, setRaw] = useState<RawScore | null>(null);
   const [track, setTrack] = useState(0);
   const [fromBar, setFromBar] = useState(1);
@@ -67,6 +67,14 @@ export function TuneImport({ tune, onTune }: { tune: Tune | null; onTune: (t: Tu
       setLoading(null);
     }
   }
+
+  // A file handed over from the library (e.g. a ClassTab MIDI) loads once on mount.
+  const loadedInitial = useRef(false);
+  useEffect(() => {
+    if (!initialFile || loadedInitial.current) return;
+    loadedInitial.current = true;
+    Promise.resolve().then(() => onFile(initialFile));
+  });
 
   const preview = tune?.bars.slice(0, 4).map((b) => b.melody.map((n) => midiName(n.midi)).join(" ") || "–");
 
