@@ -1,26 +1,122 @@
 @import "tailwindcss";
 
+/* Warm "practice room" palette: ink on paper in light mode, lamp-lit wood in dark. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --bg: #f4efe6;
+  --surface: #fbf8f2;
+  --surface-2: #efe8db;
+  --line: #e2d8c6;
+  --ink: #1f1a14;
+  --ink-2: #5d5347;
+  --ink-3: #8f8374;
+  --accent: #c2541b;
+  --accent-ink: #ffffff;
+  --accent-soft: #f6dfcf;
+  --good: #3d7a4f;
+  --warn: #a86b12;
+  --paper: #fffdf8;
+  --shadow: 0 1px 2px rgb(60 40 20 / 0.06), 0 8px 24px -12px rgb(60 40 20 / 0.18);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    --bg: #14110e;
+    --surface: #1c1814;
+    --surface-2: #262019;
+    --line: #342c23;
+    --ink: #f1e9dc;
+    --ink-2: #c3b6a3;
+    --ink-3: #8a7d6c;
+    --accent: #f08a4b;
+    --accent-ink: #1a0f08;
+    --accent-soft: #3a2517;
+    --good: #7cc391;
+    --warn: #e0a645;
+    --paper: #fbf7ef;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px -12px rgb(0 0 0 / 0.6);
   }
 }
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+:root[data-theme="dark"] {
+  --bg: #14110e;
+  --surface: #1c1814;
+  --surface-2: #262019;
+  --line: #342c23;
+  --ink: #f1e9dc;
+  --ink-2: #c3b6a3;
+  --ink-3: #8a7d6c;
+  --accent: #f08a4b;
+  --accent-ink: #1a0f08;
+  --accent-soft: #3a2517;
+  --good: #7cc391;
+  --warn: #e0a645;
+  --paper: #fbf7ef;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px -12px rgb(0 0 0 / 0.6);
 }
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-paper: var(--paper);
+  --font-sans: var(--font-ui);
+  --font-display: var(--font-display);
+  --font-mono: var(--font-mono);
+  --shadow-card: var(--shadow);
+}
+
+html {
+  color-scheme: light dark;
+}
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+}
+
+.focus-ring:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--line) 50%, var(--surface-2) 100%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.rise { animation: rise 0.35s ease-out both; }
+
+/* alphaTab cursor & selection, tuned to the palette */
+.at-cursor-bar { background: rgb(194 84 27 / 0.08); }
+.at-cursor-beat { background: var(--accent); width: 3px; border-radius: 2px; }
+.at-selection div { background: rgb(194 84 27 / 0.15); }
+.at-highlight * { fill: var(--accent); stroke: var(--accent); }

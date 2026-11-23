@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+data/songs/
+public/alphatab/MuseScore_General.sf3
+worker/.venv/
+eval/results/*.json
+!.env.example
+
+# local data: your library and third-party downloads (e.g. ClassTab) stay on your machine
+data/

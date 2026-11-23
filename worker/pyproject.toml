@@ -1,0 +1,6 @@
+[project]
+name = "woodshed-worker"
+version = "0.1.0"
+description = "Audio -> MIDI transcription for Fingerstyle AI (basic-pitch)"
+requires-python = ">=3.10,<3.12"
+dependencies = ["basic-pitch[onnx]>=0.4", "scipy==1.14.1", "setuptools<81"]
