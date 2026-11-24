@@ -1,5 +1,8 @@
 import type { ChordEvent, RhythmEvent, Song, TabNote } from "@/lib/ir/schema";
 import { TUNINGS } from "@/lib/theory/validate";
+import { computeFingerings, fingeringKey } from "@/lib/theory/fingering";
+
+const RH_NUM = { p: 1, i: 2, m: 3, a: 4 } as const;
 
 /**
  * Deterministic Song IR → alphaTex conversion.
@@ -79,7 +82,9 @@ export function songToAlphaTex(
   song: Song,
   view: StaffView = "both",
   sound: GuitarSound = "steel",
+  opts: { fingering?: boolean } = {},
 ): { tex: string; beatRefs: BeatRef[] } {
+  const fingerings = opts.fingering ? computeFingerings(song) : null;
   const registry = new Map<string, string>();
   const allChords = song.sections.flatMap((s) => s.bars.flatMap((b) => b.chords));
   for (const ch of allChords) diagramName(ch, registry);
@@ -128,14 +133,20 @@ export function songToAlphaTex(
         }
         const labelled = new Set<string>();
         let pos = 0;
-        for (const b of bar.beats) {
+        for (const [beatIdx, b] of bar.beats.entries()) {
           const slot = slots.find((sl) => pos >= sl.start - 1e-6 && pos < sl.end - 1e-6) ?? slots.at(-1);
           const props: string[] = [];
           if (slot && !labelled.has(slot.ch.id)) {
             props.push(`ch "${esc(diagramName(slot.ch, registry))}"`);
             labelled.add(slot.ch.id);
           }
-          const tokens = [...b.notes].sort((x, y) => x.string - y.string).map((n) => noteToken(n, lastOnString));
+          const tokens = [...b.notes].sort((x, y) => x.string - y.string).map((n) => {
+            const t = noteToken(n, lastOnString);
+            const f = fingerings?.get(fingeringKey(barIndex, beatIdx, n.string));
+            if (f?.lh) t.effects.push(`lf ${f.lh + 1}`); // alphaTex: 1 = thumb, 2 = index …
+            if (f?.rh) t.effects.push(`rf ${RH_NUM[f.rh]}`);
+            return t;
+          });
           // Percussion: a thumb slap / body knock is written as muted "x" notes on free bass strings.
           if (b.percussion !== "none") {
             const used = new Set(b.notes.map((n) => n.string));

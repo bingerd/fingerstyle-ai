@@ -83,3 +83,15 @@ describe("percussion track", () => {
     expect(load(fingerstyle).score.tracks).toHaveLength(1);
   });
 });
+
+describe("section dynamics", () => {
+  it("plays the first section softer and the last louder", () => {
+    const bar = fingerstyle.sections[0].bars[0];
+    const three: Song = { ...fingerstyle, sections: ["Intro", "A", "Climax"].map((name) => ({ name, note: "", bars: [bar] })) };
+    const { score } = load(three);
+    humanize(at, score);
+    const top = (i: number) => Math.max(...score.tracks[0].staves[0].bars[i].voices[0].beats[1].notes.map((n) => n.dynamics));
+    expect(top(0)).toBeLessThan(top(1));
+    expect(top(2)).toBeGreaterThan(top(1));
+  });
+});

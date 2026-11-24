@@ -152,6 +152,13 @@ export function validateBeats(beats: TabBeat[], perBar: number, symbols: string[
         else if (n.technique === "slide" && n.fret === prev) issues.push({ level: "error", where: at, message: "slide to the same fret" });
       }
       if (n.technique === "harmonic" && !(n.fret in NATURAL_HARMONIC)) issues.push({ level: "error", where: at, message: `no natural harmonic at fret ${n.fret} (use 12, 7, 5, 4, 19…)` });
+      if (n.technique === "artificial-harmonic" && n.fret > 12)
+        issues.push({ level: "warning", where: at, message: `harp harmonic on fret ${n.fret}: the picking hand would have to reach fret ${n.fret + 12}` });
+      if (n.technique === "tap") {
+        const held = notes.filter((m) => m !== n && m.fret > 0 && m.technique !== "tap" && m.technique !== "dead").map((m) => m.fret);
+        if (held.length && n.fret <= Math.max(...held))
+          issues.push({ level: "warning", where: at, message: `tapped fret ${n.fret} is not above the fretting hand (fret ${Math.max(...held)})` });
+      }
       if (n.technique !== "dead") lastFret.set(n.string, n.fret);
     }
     if (b.chord && !symbols.includes(b.chord)) issues.push({ level: "warning", where: at, message: `label "${b.chord}" is not one of the bar's chords` });
@@ -237,6 +244,25 @@ function validateEmbellished(song: Song, tune: Tune, onlyBar?: number): Issue[] 
   return issues;
 }
 
+/**
+ * Flashy runs must stay physically playable: a new attack every < 50 ms (> 20 notes/s) is beyond
+ * any fingerstyle player; < 70 ms is virtuoso territory. Legato notes (hammer/pull/slide) are cheaper.
+ */
+export function validateSpeed(beats: TabBeat[], tempo: number, where: string): Issue[] {
+  const issues: Issue[] = [];
+  let pos = 0;
+  for (const b of beats) {
+    const secs = (eventBeats(b) * 60) / Math.max(1, tempo);
+    const picked = b.notes.some((n) => n.technique !== "hammer" && n.technique !== "pull" && n.technique !== "slide");
+    const at = `${where} beat ${+(pos + 1).toFixed(2)}`;
+    pos += eventBeats(b);
+    if (!picked || !b.notes.length) continue;
+    if (secs < 0.05) issues.push({ level: "error", where: at, message: `${Math.round(1 / secs)} picked notes per second at ${tempo} bpm is unplayable; use a longer value or hammer-ons/pull-offs` });
+    else if (secs < 0.07) issues.push({ level: "warning", where: at, message: `${Math.round(1 / secs)} picked notes per second at ${tempo} bpm is virtuoso speed` });
+  }
+  return issues;
+}
+
 /** Everything that can be checked within one bar (chord grips, rhythm sums, tab beats). */
 export function validateBar(song: Song, bar: Song["sections"][number]["bars"][number], where: string, g: Guitar = guitarOf(song), perBar = barBeats(song.timeSignature)): Issue[] {
   const issues: Issue[] = [];
@@ -271,6 +297,7 @@ export function validateSong(song: Song): Issue[] {
         ids.add(ch.id);
       }
       issues.push(...validateBar(song, bar, where, g, perBar));
+      issues.push(...validateSpeed(bar.beats, song.tempo, where));
     });
     if (!section.bars.length) issues.push({ level: "error", where: `section ${si + 1}`, message: "section has no bars" });
   });

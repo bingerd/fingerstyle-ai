@@ -9,6 +9,13 @@ type AT = typeof AlphaTabNS;
  */
 export function humanize(at: AT, score: AlphaTabNS.model.Score) {
   const D = at.model.DynamicValue;
+  // Shape the whole piece: the first section a notch softer, the last one a notch louder (the climax).
+  const sectionOf: number[] = [];
+  let sec = -1;
+  for (const mb of score.masterBars) { if (mb.section || sec < 0) sec++; sectionOf.push(sec); }
+  const sections = sec + 1;
+  const shift = (barIndex: number) => (sections < 2 ? 0 : sectionOf[barIndex] === 0 ? -1 : sectionOf[barIndex] === sections - 1 ? 1 : 0);
+  const level = (v: number, barIndex: number) => Math.max(D.PPP, Math.min(D.FFF, v + shift(barIndex))) as AlphaTabNS.model.DynamicValue;
   for (const track of score.tracks)
     for (const staff of track.staves)
       for (const bar of staff.bars)
@@ -21,9 +28,9 @@ export function humanize(at: AT, score: AlphaTabNS.model.Score) {
             const bottom = sorted[0];
             const downbeat = beat.playbackStart === 0;
             for (const n of notes) {
-              if (n === top) n.dynamics = downbeat ? D.FF : D.F; // melody sings
-              else if (n === bottom) n.dynamics = D.MF; // thumb bass
-              else n.dynamics = D.P; // inner voices stay underneath
+              if (n === top) n.dynamics = level(downbeat ? D.FF : D.F, bar.index); // melody sings
+              else if (n === bottom) n.dynamics = level(D.MF, bar.index); // thumb bass
+              else n.dynamics = level(D.P, bar.index); // inner voices stay underneath
             }
             if (notes.length >= 4 && beat.brushType === at.model.BrushType.None) {
               beat.brushType = at.model.BrushType.ArpeggioUp;

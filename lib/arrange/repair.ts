@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { Bar, type Song } from "@/lib/ir/schema";
-import { errorsOnly, formatIssues, validateAgainstTune, validateBar, type Issue } from "@/lib/theory/validate";
+import { errorsOnly, formatIssues, validateAgainstTune, validateBar, validateSpeed, type Issue } from "@/lib/theory/validate";
 import { midiName, type Tune } from "@/lib/tune/tune";
 import type { Fidelity } from "./plan";
 
@@ -32,6 +32,7 @@ export function barErrors(song: Song, opts: { tune?: Tune; fidelity: Fidelity; t
   for (const b of bars) {
     const issues = errorsOnly([
       ...validateBar(song, b.bar, b.where),
+      ...validateSpeed(b.bar.beats, song.tempo, b.where),
       ...(opts.tune && opts.fidelity !== "free" && b.index < opts.tune.bars.length ? validateAgainstTune(song, opts.tune, b.index, opts.fidelity) : []),
     ]);
     if (issues.length) perBar.set(b.index, issues);

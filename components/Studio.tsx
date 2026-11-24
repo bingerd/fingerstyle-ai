@@ -14,6 +14,7 @@ import { ScoreView, type LoopRange } from "./ScoreView";
 import { StudyNotes } from "./StudyNotes";
 import { Alternatives, ReviewPanel, type Candidate } from "./Review";
 import { LibraryView } from "./LibraryView";
+import { Moments } from "./Moments";
 import type { ArrangementPlan, Direction } from "@/lib/arrange/plan";
 
 type Preview = { chordId: string; option: ReharmOption; index: number };
@@ -36,6 +37,7 @@ export function Studio() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [loop, setLoop] = useState<LoopRange>(null);
   const [playRequest, setPlayRequest] = useState(0);
+  const [speedRequest, setSpeedRequest] = useState<{ value: number; n: number } | undefined>(undefined);
   const [refine, setRefine] = useState("");
   const [library, setLibrary] = useState<SavedSong[]>([]);
   const [showComposer, setShowComposer] = useState(false);
@@ -101,13 +103,18 @@ export function Studio() {
   type Mode = { kind: "new" } | { kind: "retake"; direction: Direction } | { kind: "revise"; existing: Song };
 
   /** Poll a background job until it finishes; returns its result. */
-  async function waitForJob(jobId: string) {
+  async function waitForJob(jobId: string, onPartial?: (partial: Candidate[]) => void) {
+    let seen = 0;
     for (;;) {
       await new Promise((r) => setTimeout(r, 2500));
       const res = await fetch(`/api/jobs/${jobId}`);
       const j = await res.json();
       if (!res.ok) throw new Error(j.error ?? "Lost track of the generation");
       setJob({ label: j.label, stage: j.stage, startedAt: j.startedAt });
+      if (onPartial && j.partial?.length > seen && j.status === "running") {
+        seen = j.partial.length;
+        onPartial(j.partial);
+      }
       if (j.status === "done") return j.result;
       if (j.status === "error") throw new Error(j.error);
     }
@@ -140,8 +147,21 @@ export function Studio() {
 
   async function runJob(jobId: string, kind: Mode["kind"], input: ComposerInput | null) {
     setBusy(true);
+    let shown = false;
     try {
-      applyResult(await waitForJob(jobId), kind, input);
+      // A new set of alternatives: open the first finished one immediately, add the others as they land.
+      const onPartial = kind === "new" ? (partial: Candidate[]) => {
+        const sorted = [...partial].sort((a, b) => b.review.overall - a.review.overall);
+        if (!shown) { shown = true; applyResult({ candidates: sorted }, "new", input); }
+        else setCandidates(sorted);
+      } : undefined;
+      const result = await waitForJob(jobId, onPartial);
+      if (shown) {
+        setCandidates(result.candidates);
+        setAnalysis(result.analysis ?? null);
+        setFailed(result.failed?.length ?? 0);
+        refreshLibrary();
+      } else applyResult(result, kind, input);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -424,7 +444,17 @@ export function Studio() {
               <ChordTimeline song={displaySong!} selectedId={selectedId} activeId={activeId} changedIds={changedIds} onSelect={selectChord} />
             </section>
 
+            <Moments
+              song={displaySong!}
+              onPractice={(m) => {
+                setLoop({ startBar: m.startBar, endBar: m.endBar });
+                setSpeedRequest((r) => ({ value: m.speed, n: (r?.n ?? 0) + 1 }));
+                setPlayRequest((n) => n + 1);
+              }}
+            />
+
             <ScoreView
+              speedRequest={speedRequest}
               song={displaySong!}
               loop={loop}
               onLoopChange={setLoop}

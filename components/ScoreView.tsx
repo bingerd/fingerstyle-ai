@@ -17,6 +17,7 @@ export function ScoreView({
   onActiveChord,
   onChordClick,
   playRequest = 0,
+  speedRequest,
 }: {
   song: Song;
   loop: LoopRange;
@@ -25,6 +26,8 @@ export function ScoreView({
   onChordClick: (id: string) => void;
   /** Bump to start playback as soon as the (re)loaded score is ready, e.g. for reharm previews. */
   playRequest?: number;
+  /** Ask the player to switch to a practice speed (bump n to re-apply the same value). */
+  speedRequest?: { value: number; n: number };
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -36,6 +39,7 @@ export function ScoreView({
   const [barsPerRow, setBarsPerRow] = useState(-1);
   const [fullscreen, setFullscreen] = useState(false);
   const [expressive, setExpressive] = useState(true);
+  const [fingering, setFingering] = useState(true);
   const expressiveRef = useRef(true);
   const atRef = useRef<typeof AlphaTabNS | null>(null);
   const [sound, setSoundState] = useState<GuitarSound>(song.texture === "fingerstyle" ? "nylon" : "steel");
@@ -50,7 +54,7 @@ export function ScoreView({
   const [countIn, setCountIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { tex, beatRefs } = useMemo(() => songToAlphaTex(song, view, sound), [song, view, sound]);
+  const { tex, beatRefs } = useMemo(() => songToAlphaTex(song, view, sound, { fingering }), [song, view, sound, fingering]);
   // Index of the first beatRef of each bar → maps an alphaTab beat back to a chord id.
   const barOffsets = useMemo(() => {
     const offsets: number[] = [];
@@ -66,6 +70,8 @@ export function ScoreView({
   // Loop a bar range (used by the loop toggle and by reharm previews).
   const loopRef = useRef(loop);
   const pendingPlay = useRef(false);
+  /** The tex whose MIDI is currently loaded in the player. */
+  const loadedTex = useRef<string | null>(null);
   const applyLoop = useRef(() => {});
   useEffect(() => {
     applyLoop.current = () => {
@@ -102,6 +108,7 @@ export function ScoreView({
         const available = (s?: GuitarSound) => s && (s === "nylon-rec" ? rec.nylon : s === "steel-rec" ? rec.steel : true);
         if (available(prefs.sound)) setSoundState(prefs.sound!);
         else if (rec.nylon && initialTexture.current === "fingerstyle") setSoundState("nylon-rec");
+        if (prefs.fingering === false) setFingering(false);
         if (prefs.expressive === false) { setExpressive(false); expressiveRef.current = false; }
         atRef.current = at;
         const api = new at.AlphaTabApi(hostRef.current, {
@@ -136,6 +143,7 @@ export function ScoreView({
           if (rec.steel) api.loadSoundFont("/alphatab/freepats-steel.sf2", true);
         });
         api.midiLoaded.on(() => {
+          loadedTex.current = texRef.current;
           applyLoop.current();
           if (pendingPlay.current) {
             pendingPlay.current = false;
@@ -203,6 +211,12 @@ export function ScoreView({
   }
 
   useEffect(() => { if (apiRef.current) apiRef.current.playbackSpeed = speed; }, [speed]);
+  const lastSpeedRequest = useRef(0);
+  useEffect(() => {
+    if (!speedRequest || speedRequest.n === lastSpeedRequest.current) return;
+    lastSpeedRequest.current = speedRequest.n;
+    Promise.resolve().then(() => setSpeed(speedRequest.value));
+  }, [speedRequest]);
   useEffect(() => { if (apiRef.current) apiRef.current.metronomeVolume = metronome ? 1 : 0; }, [metronome]);
   useEffect(() => { if (apiRef.current) apiRef.current.countInVolume = countIn ? 1 : 0; }, [countIn]);
 
@@ -212,7 +226,13 @@ export function ScoreView({
   }, [loop, tex, rendering]);
 
   useEffect(() => {
-    if (playRequest) pendingPlay.current = true;
+    if (!playRequest) return;
+    const api = apiRef.current;
+    // Same score already loaded (e.g. a new loop range): start right away; otherwise wait for the reload.
+    if (api && loadedTex.current === texRef.current) {
+      applyLoop.current();
+      api.play();
+    } else pendingPlay.current = true;
   }, [playRequest]);
 
   const totalBars = song.sections.reduce((n, s) => n + s.bars.length, 0);
@@ -299,6 +319,13 @@ export function ScoreView({
           </span>
         </span>
         <button
+          onClick={() => { setFingering((f) => { writePrefs({ fingering: !f }); return !f; }); }} aria-pressed={fingering}
+          title="Left-hand finger numbers (1–4) and right-hand p-i-m-a, computed for every note"
+          className={`focus-ring h-8 rounded-full border px-3 ${fingering ? "border-accent bg-accent-soft text-ink" : "border-line hover:bg-surface-2"}`}
+        >
+          Fingerings
+        </button>
+        <button
           onClick={toggleExpressive} aria-pressed={expressive}
           title="Melody louder than bass, soft inner voices, rolled big chords"
           className={`focus-ring h-8 rounded-full border px-3 ${expressive ? "border-accent bg-accent-soft text-ink" : "border-line hover:bg-surface-2"}`}
@@ -360,7 +387,7 @@ const PauseIcon = () => (
   <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden><path d="M3 1.5h3v11H3zM8 1.5h3v11H8z" fill="currentColor" /></svg>
 );
 
-type ReadingPrefs = { view?: StaffView; scale?: number; barsPerRow?: number; expressive?: boolean; sound?: GuitarSound };
+type ReadingPrefs = { view?: StaffView; scale?: number; barsPerRow?: number; expressive?: boolean; sound?: GuitarSound; fingering?: boolean };
 const PREFS_KEY = "woodshed.reading";
 function readPrefs(): ReadingPrefs {
   try { return JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as ReadingPrefs; } catch { return {}; }

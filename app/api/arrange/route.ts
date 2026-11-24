@@ -80,7 +80,7 @@ export async function POST(req: Request) {
   const data = parsed.data;
   if (data.background) {
     const label = existing ? `Revising “${existing.title}”` : data.tune ? `Arranging “${data.tune.title}”` : `Arranging “${(data.request || data.style).slice(0, 60)}”`;
-    const job = startJob(label, (stage) => runArrange(data, existing, stage));
+    const job = startJob(label, (stage, partial) => runArrange(data, existing, stage, partial));
     return Response.json({ jobId: job.id }, { status: 202 });
   }
   try {
@@ -92,7 +92,7 @@ export async function POST(req: Request) {
   }
 }
 
-async function runArrange(data: Body, existing: Song | undefined, stage: (s: string) => void) {
+async function runArrange(data: Body, existing: Song | undefined, stage: (s: string) => void, partial: (c: unknown) => void = () => {}) {
   const { tune, provider, request, position } = data;
   // An imported tune is always arranged with explicit tab so the melody can be checked.
   const texture = tune ? "fingerstyle" : data.texture;
@@ -120,20 +120,22 @@ async function runArrange(data: Body, existing: Song | undefined, stage: (s: str
     ? `Writing ${directions.length} arrangements in parallel (${done} done): ${directions.map((d) => d.name).join(", ")}`
     : `Writing “${directions[0].name}”…`);
   writing();
+  // Each arrangement is saved and published the moment it is ready, so the UI can show it right away.
   const settled = await Promise.allSettled(
-    directions.map((direction) =>
-      arrangeOne({ provider, request, texture, position, direction, tune, existing }).finally(() => { done++; writing(); }),
+    directions.map((direction, i) =>
+      arrangeOne({ provider, request, texture, position, direction, tune, existing })
+        .then(async (c) => {
+          const candidate = { id: `${Date.now().toString(36)}-${i}`, ...c, savedId: data.autosave ? (await saveSong(c.song, undefined, tune, c.direction)).id : null };
+          partial(candidate);
+          return candidate;
+        })
+        .finally(() => { done++; writing(); }),
     ),
   );
   stage("Reviewing and ranking…");
-  const ranked = settled
+  const candidates = settled
     .flatMap((r) => (r.status === "fulfilled" ? [r.value] : []))
     .sort((a, b) => b.review.overall - a.review.overall);
-  const candidates = await Promise.all(ranked.map(async (c, i) => ({
-    id: `${Date.now().toString(36)}-${i}`,
-    ...c,
-    savedId: data.autosave ? (await saveSong(c.song, undefined, tune, c.direction)).id : null,
-  })));
   const failed = settled.flatMap((r, i) =>
     r.status === "rejected" ? [{ direction: directions[i], error: (r.reason as Error)?.message ?? "failed" }] : [],
   );
