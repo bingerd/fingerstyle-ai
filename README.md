@@ -44,7 +44,8 @@ flowchart LR
 2. **Deterministic checker** (`lib/theory/validate.ts`, using `tonal`): voicings must spell their chords, fret spans must
    be playable, beats must fill every bar, hammer-ons must go up the neck, harmonics must sit on real nodes. For
    imported tunes every melody note must be the top voice at the right time (exact) or within half a beat
-   (embellished). Errors are sent back for up to two repair rounds.
+   (embellished). Only the broken bars go back to the model for repair (seconds instead of a full
+   rewrite); song-level problems fall back to a full rewrite. Up to two repair rounds.
 3. **Musical review** (`lib/eval/review.ts`): melody kept, melody stands out, harmonic fit, voice leading, groove
    coherence, playability for the chosen level, techniques in proportion, reharmonization amount vs. what was asked.
 4. **Rendering**: IR → alphaTex → [alphaTab](https://alphatab.net) for notation, tab, chord diagrams and playback.

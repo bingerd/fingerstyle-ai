@@ -5,7 +5,8 @@ import { ARRANGE_SYSTEM, arrangePrompt } from "@/lib/claude/prompts";
 import { GenerationError, generateValidated } from "@/lib/claude/generate";
 import { PROVIDERS, type ProviderId } from "@/lib/llm/providers";
 import { Tune } from "@/lib/tune/tune";
-import { validateAgainstTune, validateSong } from "@/lib/theory/validate";
+import { formatIssues, validateAgainstTune, validateSong } from "@/lib/theory/validate";
+import { BarFixes, barErrors, repairPrompt, spliceBars } from "@/lib/arrange/repair";
 import {
   ArrangementPlan, Controls, Direction, PLAN_SYSTEM, directionFromControls, lockDirection, needsPlan, planPrompt, validatePlan,
 } from "@/lib/arrange/plan";
@@ -26,25 +27,45 @@ const Body = Controls.extend({
 });
 type Body = z.infer<typeof Body>;
 
+const MAX_FIX_ROUNDS = 2;
+
 async function arrangeOne(opts: {
   provider: ProviderId; request: string; texture: "comping" | "fingerstyle"; position: string;
   direction: Direction; tune?: Tune; existing?: Song;
 }) {
-  const { tune, texture, direction } = opts;
-  const result = await generateValidated({
-    provider: opts.provider,
-    schema: Song,
-    system: ARRANGE_SYSTEM,
-    prompt: arrangePrompt(opts),
-    validate: (song) => [
-      ...validateSong(song),
-      ...(song.texture !== texture ? [{ level: "error" as const, where: "song", message: `texture must be "${texture}"` }] : []),
-      ...(tune ? validateAgainstTune(song, tune, undefined, direction.fidelity) : []),
-    ],
-    effort: tune || texture === "fingerstyle" ? "high" : "medium",
-  });
-  const song = result.value;
-  return { direction, song, warnings: result.warnings, repairs: result.repairs, review: reviewSong(song, { tune, prefs: direction }) };
+  const { tune, texture, direction, provider } = opts;
+  const validate = (song: Song) => [
+    ...validateSong(song),
+    ...(song.texture !== texture ? [{ level: "error" as const, where: "song", message: `texture must be "${texture}"` }] : []),
+    ...(tune ? validateAgainstTune(song, tune, undefined, direction.fidelity) : []),
+  ];
+  const prompt = arrangePrompt(opts);
+  const effort = tune || texture === "fingerstyle" ? "high" : "medium";
+  let song = (await generateValidated({ provider, schema: Song, system: ARRANGE_SYSTEM, prompt, validate, effort, maxRepairs: 0 })).value;
+
+  // Repair: only the broken bars go back to the model (fast); song-level problems need a full rewrite.
+  let repairs = 0;
+  for (let round = 0; round < MAX_FIX_ROUNDS; round++) {
+    const { global, perBar } = barErrors(song, { tune, fidelity: direction.fidelity, texture });
+    if (!global.length && !perBar.size) break;
+    repairs++;
+    const barCount = song.sections.reduce((n, s) => n + s.bars.length, 0);
+    if (global.length || perBar.size > barCount / 2) {
+      const errors = [...global, ...[...perBar.values()].flat()];
+      song = (await generateValidated({
+        provider, schema: Song, system: ARRANGE_SYSTEM, validate, effort, maxRepairs: 0,
+        prompt: `${prompt}\n\n---\nYour previous answer:\n${JSON.stringify(song)}\n\nA deterministic checker found these problems in it:\n${formatIssues(errors)}\n\nReturn the complete corrected JSON. Fix every error; keep everything that was fine unchanged.`,
+      })).value;
+    } else {
+      const fix = await generateValidated({
+        provider, schema: BarFixes, system: ARRANGE_SYSTEM, prompt: repairPrompt(song, perBar, tune),
+        validate: () => [], effort: "medium", maxRepairs: 0,
+      });
+      song = spliceBars(song, fix.value.bars.filter((b) => perBar.has(b.index)));
+    }
+  }
+  const warnings = validate(song);
+  return { direction, song, warnings, repairs, review: reviewSong(song, { tune, prefs: direction }) };
 }
 
 export async function POST(req: Request) {

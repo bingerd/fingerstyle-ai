@@ -237,6 +237,23 @@ function validateEmbellished(song: Song, tune: Tune, onlyBar?: number): Issue[] 
   return issues;
 }
 
+/** Everything that can be checked within one bar (chord grips, rhythm sums, tab beats). */
+export function validateBar(song: Song, bar: Song["sections"][number]["bars"][number], where: string, g: Guitar = guitarOf(song), perBar = barBeats(song.timeSignature)): Issue[] {
+  const issues: Issue[] = [];
+  if (!bar.chords.length) issues.push({ level: "error", where, message: "bar has no chords" });
+  let total = 0;
+  for (const ch of bar.chords) {
+    if (!ch.rhythm.length) issues.push({ level: "error", where, message: `${ch.symbol} has an empty rhythm` });
+    total += rhythmBeats(ch.rhythm);
+    issues.push(...validateChord(ch, `${where} (${ch.symbol})`, g));
+  }
+  if (Math.abs(total - perBar) > 1e-6)
+    issues.push({ level: "error", where, message: `chord rhythms add up to ${total} beats, bar needs ${perBar}` });
+  if (bar.beats.length) issues.push(...validateBeats(bar.beats, perBar, bar.chords.map((c) => c.symbol), where));
+  else if (song.texture === "fingerstyle") issues.push({ level: "error", where, message: "fingerstyle bar has no tab beats" });
+  return issues;
+}
+
 export function validateSong(song: Song): Issue[] {
   const issues: Issue[] = [];
   const perBar = barBeats(song.timeSignature);
@@ -249,19 +266,11 @@ export function validateSong(song: Song): Issue[] {
   song.sections.forEach((section, si) => {
     section.bars.forEach((bar, bi) => {
       const where = `${section.name} bar ${bi + 1}`;
-      if (!bar.chords.length) issues.push({ level: "error", where, message: "bar has no chords" });
-      let total = 0;
       for (const ch of bar.chords) {
         if (ids.has(ch.id)) issues.push({ level: "error", where, message: `duplicate chord id "${ch.id}"` });
         ids.add(ch.id);
-        if (!ch.rhythm.length) issues.push({ level: "error", where, message: `${ch.symbol} has an empty rhythm` });
-        total += rhythmBeats(ch.rhythm);
-        issues.push(...validateChord(ch, `${where} (${ch.symbol})`, g));
       }
-      if (Math.abs(total - perBar) > 1e-6)
-        issues.push({ level: "error", where, message: `chord rhythms add up to ${total} beats, bar needs ${perBar}` });
-      if (bar.beats.length) issues.push(...validateBeats(bar.beats, perBar, bar.chords.map((c) => c.symbol), where));
-      else if (song.texture === "fingerstyle") issues.push({ level: "error", where, message: "fingerstyle bar has no tab beats" });
+      issues.push(...validateBar(song, bar, where, g, perBar));
     });
     if (!section.bars.length) issues.push({ level: "error", where: `section ${si + 1}`, message: "section has no bars" });
   });

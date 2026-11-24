@@ -18,12 +18,15 @@ export async function generateValidated<S extends z.ZodType>(opts: {
   prompt: string;
   validate: (value: z.infer<S>) => Issue[];
   effort: Effort;
+  /** Full-rewrite repair rounds (default 2). */
+  maxRepairs?: number;
 }): Promise<{ value: z.infer<S>; warnings: Issue[]; repairs: number }> {
   const jsonSchema = z.toJSONSchema(opts.schema) as object;
   let prompt = opts.prompt;
   let last: { value: z.infer<S>; issues: Issue[] } | null = null;
 
-  for (let attempt = 0; attempt <= MAX_REPAIRS; attempt++) {
+  const maxRepairs = opts.maxRepairs ?? MAX_REPAIRS;
+  for (let attempt = 0; attempt <= maxRepairs; attempt++) {
     const raw = await runStructured(opts.provider, { system: opts.system, prompt, schema: jsonSchema, effort: opts.effort });
     const parsed = opts.schema.safeParse(raw);
     if (!parsed.success) throw new ProviderError("The model returned JSON that doesn't match the song format.", 502);
@@ -47,5 +50,5 @@ Return the complete corrected JSON. Fix every error; keep everything that was fi
   }
 
   // Out of repair attempts: return the best effort with its issues surfaced as warnings.
-  return { value: last!.value, warnings: last!.issues, repairs: MAX_REPAIRS };
+  return { value: last!.value, warnings: last!.issues, repairs: maxRepairs };
 }
