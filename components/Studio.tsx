@@ -16,6 +16,8 @@ import { Alternatives, ReviewPanel, type Candidate } from "./Review";
 import { LibraryView } from "./LibraryView";
 import { Moments } from "./Moments";
 import { PracticePlan } from "./PracticePlan";
+import { ToolTabs } from "./ToolTabs";
+import { detectMoments } from "@/lib/eval/moments";
 import type { ArrangementPlan, Direction } from "@/lib/arrange/plan";
 
 type Preview = { chordId: string; option: ReharmOption; index: number };
@@ -81,6 +83,8 @@ export function Studio() {
     () => (song && preview ? replaceChord(song, preview.chordId, preview.option.chords, preview.option.beats) : song),
     [song, preview],
   );
+  const momentCount = useMemo(() => (displaySong ? detectMoments(displaySong).length : 0), [displaySong]);
+  const [toolTab, setToolTab] = useState<string | null>(null);
   const selected = song && selectedId ? findChord(song, selectedId)?.chord ?? null : null;
 
   function loadSong(next: Song, opts: { saved?: string | null; keepHistory?: boolean } = {}) {
@@ -382,166 +386,174 @@ export function Studio() {
       ) : !song ? (
         <Landing initialFile={pendingFile} provider={provider} busy={busy} onSubmit={(i) => arrange(i)} onDemo={() => openSaved({ id: "", savedAt: "", song: DEMO_SONG })} library={library} onOpen={openSaved} onDelete={remove} />
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_400px]">
-          <main className="min-w-0 space-y-6">
-            {candidates.length > 1 && (
-              <Alternatives
-                candidates={candidates}
-                activeId={activeCandidate}
-                busy={busy}
-                analysis={analysis}
-                failed={failed}
-                onListen={listen}
-                onRegenerate={(d) => lastInput && arrange(lastInput, { kind: "retake", direction: d })}
-                onMore={() => lastInput && arrange(lastInput)}
-              />
-            )}
+        <div className="space-y-4">
+          <SongHeader song={song} />
 
-            <SongHeader song={song} />
+          <ScoreView
+            speedRequest={speedRequest}
+            song={displaySong!}
+            loop={loop}
+            onLoopChange={setLoop}
+            onActiveChord={setActiveId}
+            onChordClick={(id) => { setSelectedId(id); setPreview(null); }}
+            playRequest={playRequest}
+          />
 
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!refine.trim()) return;
-                arrange(
-                  {
-                    request: refine, style: song.style, difficulty: song.difficulty, position: lastInput?.position ?? "No preference", texture: song.texture,
-                    flair: direction?.flair ?? "auto", reharm: direction?.reharm ?? "auto", fidelity: direction?.fidelity ?? "auto", alternatives: 1, length: "short",
-                  },
-                  { kind: "revise", existing: song },
-                );
-                setRefine("");
-              }}
-              className="card flex items-center gap-2 p-2 pl-4"
-            >
-              <span className="text-sm text-ink-3" aria-hidden>✦</span>
-              <input
-                value={refine}
-                onChange={(e) => setRefine(e.target.value)}
-                disabled={busy}
-                placeholder="Ask for changes: “add a turnaround”, “make bar 4 darker”, “simpler for beginners”"
-                className="min-w-0 flex-1 bg-transparent py-2 text-[15px] outline-none placeholder:text-ink-3"
-                aria-label="Ask for changes to this arrangement"
-              />
-              <button disabled={busy || !refine.trim()} className="focus-ring flex h-10 items-center gap-2 rounded-xl bg-ink px-4 text-sm font-semibold text-bg disabled:opacity-40">
-                {busy ? <><Spinner /> Revising…</> : "Revise"}
-              </button>
-            </form>
+          <ToolTabs
+            open={toolTab}
+            onOpenChange={setToolTab}
+            tabs={[
+              ...(candidates.length > 1 ? [{
+                id: "alts", label: "Alternatives", badge: candidates.length,
+                content: (
+                  <Alternatives
+                    candidates={candidates} activeId={activeCandidate} busy={busy} analysis={analysis} failed={failed} onListen={listen}
+                    onRegenerate={(d) => lastInput && arrange(lastInput, { kind: "retake", direction: d })}
+                    onMore={() => lastInput && arrange(lastInput)}
+                  />
+                ),
+              }] : []),
+              ...(momentCount ? [{
+                id: "moments", label: "✦ Moments", badge: momentCount,
+                content: (
+                  <Moments
+                    song={displaySong!}
+                    onPractice={(m) => {
+                      // Loop at least two bars so the moment is practised in context.
+                      const bars = song.sections.reduce((n, s) => n + s.bars.length, 0);
+                      setLoop({ startBar: m.startBar, endBar: Math.min(bars - 1, Math.max(m.endBar, m.startBar + 1)) });
+                      setSpeedRequest((r) => ({ value: m.speed, n: (r?.n ?? 0) + 1 }));
+                      setPlayRequest((n) => n + 1);
+                    }}
+                  />
+                ),
+              }] : []),
+              ...(song.texture === "fingerstyle" ? [{
+                id: "practice", label: "Practice",
+                content: (
+                  <PracticePlan
+                    song={displaySong!}
+                    savedId={savedId}
+                    mastered={library.find((e) => e.id === savedId)?.progress?.mastered ?? []}
+                    onPractice={(range, speed) => {
+                      setLoop(range);
+                      setSpeedRequest((r) => ({ value: speed, n: (r?.n ?? 0) + 1 }));
+                      setPlayRequest((n) => n + 1);
+                    }}
+                    onProgress={(mastered) => {
+                      if (!savedId) return;
+                      setLibrary((lib) => lib.map((e) => (e.id === savedId ? { ...e, progress: { mastered } } : e)));
+                      fetch(`/api/songs/${savedId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mastered }) });
+                    }}
+                  />
+                ),
+              }] : []),
+              {
+                id: "chords", label: "Chords & reharm",
+                content: (
+                  <section aria-label="Chord chart">
+                    <p className="mb-2 text-sm text-ink-3">Click any chord (here or in the score) to hear reharmonizations.</p>
+                    <ChordTimeline song={displaySong!} selectedId={selectedId} activeId={activeId} changedIds={changedIds} onSelect={selectChord} />
+                  </section>
+                ),
+              },
+              {
+                id: "review", label: "Review", badge: warnings.length || undefined,
+                content: (
+                  <div className="space-y-3">
+                    {warnings.length > 0 && (
+                      <details className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2 text-sm">
+                        <summary className="cursor-pointer text-warn">{warnings.length} note{warnings.length > 1 ? "s" : ""} from the theory checker</summary>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-ink-2">
+                          {warnings.map((w, i) => <li key={i}>{w.where}: {w.message}</li>)}
+                        </ul>
+                      </details>
+                    )}
+                    <ReviewPanel song={displaySong!} tune={tune} direction={direction} />
+                  </div>
+                ),
+              },
+              ...(song.tasteNotes.length ? [{ id: "notes", label: "Study notes", content: <StudyNotes notes={song.tasteNotes} /> }] : []),
+              {
+                id: "revise", label: "Revise",
+                content: (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!refine.trim()) return;
+                      arrange(
+                        {
+                          request: refine, style: song.style, difficulty: song.difficulty, position: lastInput?.position ?? "No preference", texture: song.texture,
+                          flair: direction?.flair ?? "auto", reharm: direction?.reharm ?? "auto", fidelity: direction?.fidelity ?? "auto", alternatives: 1, length: "short",
+                        },
+                        { kind: "revise", existing: song },
+                      );
+                      setRefine("");
+                    }}
+                    className="card flex items-center gap-2 p-2 pl-4"
+                  >
+                    <span className="text-sm text-ink-3" aria-hidden>✦</span>
+                    <input
+                      value={refine} onChange={(e) => setRefine(e.target.value)} disabled={busy}
+                      placeholder="Ask for changes: “add a turnaround”, “make bar 4 darker”, “simpler for beginners”"
+                      className="min-w-0 flex-1 bg-transparent py-2 text-[15px] outline-none placeholder:text-ink-3"
+                      aria-label="Ask for changes to this arrangement"
+                    />
+                    <button disabled={busy || !refine.trim()} className="focus-ring flex h-10 items-center gap-2 rounded-xl bg-ink px-4 text-sm font-semibold text-bg disabled:opacity-40">
+                      {busy ? <><Spinner /> Revising…</> : "Revise"}
+                    </button>
+                  </form>
+                ),
+              },
+            ]}
+          />
 
-            {warnings.length > 0 && (
-              <details className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2 text-sm">
-                <summary className="cursor-pointer text-warn">{warnings.length} note{warnings.length > 1 ? "s" : ""} from the theory checker</summary>
-                <ul className="mt-2 list-disc space-y-1 pl-5 text-ink-2">
-                  {warnings.map((w, i) => <li key={i}>{w.where}: {w.message}</li>)}
-                </ul>
-              </details>
-            )}
-
-            <section aria-labelledby="chart">
-              <div className="mb-3 flex items-baseline justify-between">
-                <h2 id="chart" className="font-display text-2xl font-semibold">Chord chart</h2>
-                <p className="text-sm text-ink-3">Click any chord to reharmonize it</p>
-              </div>
-              <ChordTimeline song={displaySong!} selectedId={selectedId} activeId={activeId} changedIds={changedIds} onSelect={selectChord} />
-            </section>
-
-            <Moments
-              song={displaySong!}
-              onPractice={(m) => {
-                // Loop at least two bars so the moment is practised in context.
-                const bars = song.sections.reduce((n, s) => n + s.bars.length, 0);
-                setLoop({ startBar: m.startBar, endBar: Math.min(bars - 1, Math.max(m.endBar, m.startBar + 1)) });
-                setSpeedRequest((r) => ({ value: m.speed, n: (r?.n ?? 0) + 1 }));
-                setPlayRequest((n) => n + 1);
-              }}
-            />
-
-            <PracticePlan
-              song={displaySong!}
-              savedId={savedId}
-              mastered={library.find((e) => e.id === savedId)?.progress?.mastered ?? []}
-              onPractice={(range, speed) => {
-                setLoop(range);
-                setSpeedRequest((r) => ({ value: speed, n: (r?.n ?? 0) + 1 }));
-                setPlayRequest((n) => n + 1);
-              }}
-              onProgress={(mastered) => {
-                if (!savedId) return;
-                setLibrary((lib) => lib.map((e) => (e.id === savedId ? { ...e, progress: { mastered } } : e)));
-                fetch(`/api/songs/${savedId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mastered }) });
-              }}
-            />
-
-            <ScoreView
-              speedRequest={speedRequest}
-              song={displaySong!}
-              loop={loop}
-              onLoopChange={setLoop}
-              onActiveChord={setActiveId}
-              onChordClick={(id) => { setSelectedId(id); setPreview(null); }}
-              playRequest={playRequest}
-            />
-
-            <ReviewPanel song={displaySong!} tune={tune} direction={direction} />
-
-            <StudyNotes notes={song.tasteNotes} />
-          </main>
-
-          <div className="lg:sticky lg:top-20 lg:self-start">
-            {selected ? (
-              <ReharmPanel
-                key={selected.id}
-                song={song}
-                chord={selected}
-                provider={provider}
-                tune={tune}
-                fidelity={direction?.fidelity ?? "exact"}
-                previewIndex={preview?.index ?? null}
-                onPreview={startPreview}
-                onApply={applyOption}
-                onClose={() => { setSelectedId(null); setPreview(null); setLoop(null); }}
-              />
-            ) : showComposer ? (
-              <Composer key={pendingFile?.name} initialFile={pendingFile} busy={busy} provider={provider} onSubmit={(i) => arrange(i)} />
-            ) : (
-              <SidePanel library={library} onOpen={openSaved} onDelete={remove} activeId={savedId} />
-            )}
-          </div>
+          {(selected || showComposer) && (
+            <aside className="fixed inset-y-0 right-0 z-40 w-full max-w-[440px] overflow-y-auto border-l border-line bg-bg p-4 shadow-2xl" aria-label={selected ? "Reharmonize" : "New arrangement"}>
+              {selected ? (
+                <ReharmPanel
+                  key={selected.id}
+                  song={song}
+                  chord={selected}
+                  provider={provider}
+                  tune={tune}
+                  fidelity={direction?.fidelity ?? "exact"}
+                  previewIndex={preview?.index ?? null}
+                  onPreview={startPreview}
+                  onApply={applyOption}
+                  onClose={() => { setSelectedId(null); setPreview(null); setLoop(null); }}
+                />
+              ) : (
+                <>
+                  <button onClick={() => setShowComposer(false)} className="focus-ring mb-2 ml-auto block rounded px-2 text-sm text-ink-3 hover:text-ink">Close ✕</button>
+                  <Composer key={pendingFile?.name} initialFile={pendingFile} busy={busy} provider={provider} onSubmit={(i) => arrange(i)} />
+                </>
+              )}
+            </aside>
+          )}
         </div>
       )}
     </div>
   );
 }
 
+/** Compact title row so the score starts high on the screen; the summary folds away. */
 function SongHeader({ song }: { song: Song }) {
   const ts = `${song.timeSignature.numerator}/${song.timeSignature.denominator}`;
+  const chips = [song.style, song.key, `${song.tempo} bpm`, ts, song.difficulty, song.tuning !== "standard" ? song.tuning : "", song.capo ? `capo ${song.capo}` : ""].filter(Boolean);
   return (
-    <section className="rise">
-      <div className="mb-2 flex flex-wrap gap-2 text-xs">
-        {[song.style, song.key, `${song.tempo} bpm`, ts, song.difficulty[0].toUpperCase() + song.difficulty.slice(1)].map((t) => (
-          <span key={t} className="rounded-full border border-line bg-surface px-2.5 py-1 font-medium text-ink-2">{t}</span>
-        ))}
+    <section className="rise flex flex-wrap items-baseline gap-x-4 gap-y-1">
+      <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">{song.title}</h1>
+      <div className="flex flex-wrap gap-1.5 text-xs">
+        {chips.map((t) => <span key={t} className="rounded-full border border-line bg-surface px-2 py-0.5 text-ink-2">{t}</span>)}
       </div>
-      <h1 className="font-display text-4xl font-semibold tracking-tight sm:text-5xl">{song.title}</h1>
-      <p className="mt-3 max-w-3xl text-[17px] leading-relaxed text-ink-2">{song.summary}</p>
+      {song.summary && (
+        <details className="w-full text-sm text-ink-2">
+          <summary className="cursor-pointer text-ink-3 hover:text-ink">About this arrangement</summary>
+          <p className="mt-1 max-w-3xl leading-relaxed">{song.summary}</p>
+        </details>
+      )}
     </section>
-  );
-}
-
-function SidePanel({ library, onOpen, onDelete, activeId }: { library: SavedSong[]; onOpen: (s: SavedSong) => void; onDelete: (id: string) => void; activeId: string | null }) {
-  return (
-    <div className="space-y-4">
-      <div className="card p-5">
-        <p className="text-xs font-medium tracking-widest text-ink-3 uppercase">How to study</p>
-        <ol className="mt-3 space-y-3 text-sm leading-relaxed text-ink-2">
-          <li><b className="text-ink">1. Listen.</b> Press play, then slow it to 60–70% and follow the cursor.</li>
-          <li><b className="text-ink">2. Loop.</b> Loop a tricky bar until the change feels automatic.</li>
-          <li><b className="text-ink">3. Reharmonize.</b> Click a chord, preview substitutions in context, and keep the ones you like.</li>
-          <li><b className="text-ink">4. Revise.</b> Ask for a different feel, an easier version or a new section.</li>
-        </ol>
-      </div>
-      <Library library={library} onOpen={onOpen} onDelete={onDelete} activeId={activeId} />
-    </div>
   );
 }
 

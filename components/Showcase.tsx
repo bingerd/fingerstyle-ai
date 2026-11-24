@@ -12,6 +12,7 @@ import { PracticePlan } from "./PracticePlan";
 import { ReviewPanel } from "./Review";
 import { ScoreView, type LoopRange } from "./ScoreView";
 import { StudyNotes } from "./StudyNotes";
+import { ToolTabs } from "./ToolTabs";
 
 type Piece = { slug: string; song: Song; tune?: Tune; direction?: Direction };
 const PIECES = data as unknown as Piece[];
@@ -99,33 +100,41 @@ function PieceView({ piece }: { piece: Piece }) {
     setSpeedRequest((r) => ({ value: speed, n: (r?.n ?? 0) + 1 }));
     setPlayRequest((n) => n + 1);
   };
+  const momentCount = useMemo(() => detectMoments(song).length, [song]);
+  const chips = [piece.direction?.name, song.style, song.key, `${song.tempo} bpm`, `${song.timeSignature.numerator}/${song.timeSignature.denominator}`, song.difficulty, song.tuning !== "standard" ? song.tuning : "", song.capo ? `capo ${song.capo}` : ""].filter(Boolean);
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
-      <main className="min-w-0 space-y-6">
-        <section className="rise">
-          <a href="#" className="text-sm text-ink-3 hover:text-ink">← All pieces</a>
-          <div className="mt-3 mb-2 flex flex-wrap gap-2 text-xs">
-            {[piece.direction?.name, song.style, song.key, `${song.tempo} bpm`, `${song.timeSignature.numerator}/${song.timeSignature.denominator}`, song.difficulty, song.tuning !== "standard" ? song.tuning : "", song.capo ? `capo ${song.capo}` : ""]
-              .filter(Boolean).map((t) => <span key={t} className="rounded-full border border-line bg-surface px-2.5 py-1 font-medium text-ink-2">{t}</span>)}
-          </div>
-          <h1 className="font-display text-4xl font-semibold tracking-tight sm:text-5xl">{song.title}</h1>
-          <p className="mt-3 max-w-3xl text-[17px] leading-relaxed text-ink-2">{song.summary}</p>
-        </section>
-        <Moments song={song} onPractice={(m) => practice(m, m.speed)} />
-        <ScoreView song={song} loop={loop} onLoopChange={setLoop} onActiveChord={setActiveId} onChordClick={() => {}} playRequest={playRequest} speedRequest={speedRequest} />
-        <PracticePlan
-          song={song} savedId={piece.slug} mastered={mastered} onPractice={practice}
-          onProgress={(m) => { setMastered(m); try { localStorage.setItem(progressKey(piece.slug), JSON.stringify(m)); } catch {} }}
-        />
-        <section aria-labelledby="chart">
-          <h2 id="chart" className="mb-3 font-display text-2xl font-semibold">Chord chart</h2>
-          <ChordTimeline song={song} selectedId={null} activeId={activeId} changedIds={new Set()} onSelect={() => {}} />
-        </section>
-      </main>
-      <aside className="space-y-6 lg:sticky lg:top-20 lg:self-start">
-        <ReviewPanel song={song} tune={piece.tune ?? null} direction={piece.direction ?? null} />
-        <StudyNotes notes={song.tasteNotes} />
-      </aside>
+    <div className="space-y-4">
+      <section className="rise flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <a href="#" className="w-full text-sm text-ink-3 hover:text-ink">← All pieces</a>
+        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">{song.title}</h1>
+        <div className="flex flex-wrap gap-1.5 text-xs">
+          {chips.map((t) => <span key={t} className="rounded-full border border-line bg-surface px-2 py-0.5 text-ink-2">{t}</span>)}
+        </div>
+        {song.summary && (
+          <details className="w-full text-sm text-ink-2">
+            <summary className="cursor-pointer text-ink-3 hover:text-ink">About this arrangement</summary>
+            <p className="mt-1 max-w-3xl leading-relaxed">{song.summary}</p>
+          </details>
+        )}
+      </section>
+      <ScoreView song={song} loop={loop} onLoopChange={setLoop} onActiveChord={setActiveId} onChordClick={() => {}} playRequest={playRequest} speedRequest={speedRequest} />
+      <ToolTabs
+        tabs={[
+          ...(momentCount ? [{ id: "moments", label: "✦ Moments", badge: momentCount, content: <Moments song={song} onPractice={(m) => practice(m, m.speed)} /> }] : []),
+          {
+            id: "practice", label: "Practice",
+            content: (
+              <PracticePlan
+                song={song} savedId={piece.slug} mastered={mastered} onPractice={practice}
+                onProgress={(m) => { setMastered(m); try { localStorage.setItem(progressKey(piece.slug), JSON.stringify(m)); } catch {} }}
+              />
+            ),
+          },
+          { id: "chords", label: "Chords", content: <ChordTimeline song={song} selectedId={null} activeId={activeId} changedIds={new Set()} onSelect={() => {}} /> },
+          { id: "review", label: "Review", content: <ReviewPanel song={song} tune={piece.tune ?? null} direction={piece.direction ?? null} /> },
+          ...(song.tasteNotes.length ? [{ id: "notes", label: "Study notes", content: <StudyNotes notes={song.tasteNotes} /> }] : []),
+        ]}
+      />
     </div>
   );
 }

@@ -42,6 +42,9 @@ export function ScoreView({
   const [expressive, setExpressive] = useState(true);
   const [fingering, setFingering] = useState(true);
   const [fretboard, setFretboard] = useState(false);
+  // Chord grids add a tall row above the tab; fingerstyle players read the tab itself, so hide them by default there.
+  const [diagrams, setDiagrams] = useState(song.texture !== "fingerstyle");
+  const diagramsRef = useRef(diagrams);
   const fretboardRef = useRef(false);
   const [activeBeat, setActiveBeat] = useState<{ bar: number; beat: number } | null>(null);
   const expressiveRef = useRef(true);
@@ -130,6 +133,11 @@ export function ScoreView({
         apiRef.current = api;
         applyFingeringMode(api, texRef.current);
         api.settings.notation.elements.set(at.NotationElement.EffectDynamics, false);
+        // The page already shows the title; keep the tab as high on screen as possible.
+        for (const el of [at.NotationElement.ScoreTitle, at.NotationElement.ScoreSubTitle, at.NotationElement.ScoreArtist, at.NotationElement.ScoreAlbum, at.NotationElement.ScoreWords, at.NotationElement.ScoreMusic, at.NotationElement.ScoreWordsAndMusic, at.NotationElement.ScoreCopyright])
+          api.settings.notation.elements.set(el, false);
+        if (prefs.diagrams !== undefined && initialTexture.current === "fingerstyle") { diagramsRef.current = prefs.diagrams; setDiagrams(prefs.diagrams); }
+        api.settings.notation.elements.set(at.NotationElement.ChordDiagrams, diagramsRef.current);
         api.updateSettings();
         api.scoreLoaded.on((score) => { if (expressiveRef.current) humanize(at, score); });
         const toChord = (beat: AlphaTabNS.model.Beat) => {
@@ -214,6 +222,17 @@ export function ScoreView({
     writePrefs({ expressive: next });
     apiRef.current?.tex(texRef.current, [0]); // reload so the change applies to sound
   }
+  function toggleDiagrams() {
+    const next = !diagrams;
+    setDiagrams(next);
+    diagramsRef.current = next;
+    if (song.texture === "fingerstyle") writePrefs({ diagrams: next });
+    const api = apiRef.current, at = atRef.current;
+    if (!api || !at) return;
+    api.settings.notation.elements.set(at.NotationElement.ChordDiagrams, next);
+    api.updateSettings();
+    api.render();
+  }
   function setRow(n: number) { setBarsPerRow(n); writePrefs({ barsPerRow: n }); }
   function toggleFullscreen() {
     if (document.fullscreenElement) document.exitFullscreen();
@@ -249,135 +268,104 @@ export function ScoreView({
 
   return (
     <section ref={sectionRef} className={`card overflow-hidden ${fullscreen ? "flex h-screen flex-col rounded-none" : ""}`}>
-      <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
+      {/* One slim transport bar; everything else lives in Options so the tab gets the screen. */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
         <button
           onClick={() => apiRef.current?.playPause()}
           disabled={!ready}
-          className="focus-ring inline-flex h-10 min-w-24 items-center justify-center gap-2 rounded-full bg-accent px-4 font-semibold text-accent-ink transition hover:brightness-110 disabled:opacity-40"
+          className="focus-ring inline-flex h-9 min-w-22 items-center justify-center gap-2 rounded-full bg-accent px-4 text-sm font-semibold text-accent-ink transition hover:brightness-110 disabled:opacity-40"
           aria-label={playing ? "Pause" : "Play"}
         >
           {playing ? <PauseIcon /> : <PlayIcon />} {ready ? (playing ? "Pause" : "Play") : "Loading…"}
         </button>
-        <button
-          onClick={() => apiRef.current?.stop()}
-          disabled={!ready}
-          className="focus-ring h-10 rounded-full border border-line px-3 text-sm text-ink-2 hover:bg-surface-2 disabled:opacity-40"
-        >
+        <button onClick={() => apiRef.current?.stop()} disabled={!ready} className="focus-ring h-9 rounded-full border border-line px-3 text-sm text-ink-2 hover:bg-surface-2 disabled:opacity-40">
           Stop
         </button>
-
-        <label className="ml-2 flex items-center gap-2 text-sm text-ink-2">
-          Tempo
+        <label className="flex items-center gap-2 text-sm text-ink-2" title="Practice tempo">
           <input
             type="range" min={0.4} max={1.25} step={0.05} value={speed}
             onChange={(e) => setSpeed(Number(e.target.value))}
-            className="w-28 accent-[var(--accent)]"
+            className="w-24 accent-[var(--accent)]" aria-label="Tempo"
           />
-          <span className="w-16 font-mono text-xs tabular-nums text-ink">{Math.round(song.tempo * speed)} bpm</span>
+          <span className="w-14 font-mono text-xs tabular-nums text-ink">{Math.round(song.tempo * speed)} bpm</span>
         </label>
-
-        <Toggle on={metronome} onClick={() => setMetronome((v) => !v)}>Metronome</Toggle>
-        <Toggle on={countIn} onClick={() => setCountIn((v) => !v)}>Count-in</Toggle>
         <Toggle on={!!loop} onClick={() => onLoopChange(loop ? null : { startBar: 0, endBar: totalBars - 1 })}>Loop</Toggle>
 
-        <label className="flex items-center gap-2 text-sm text-ink-2">
-          Sound
-          <select
-            value={sound}
-            onChange={(e) => setSound(e.target.value as GuitarSound)}
-            className="focus-ring h-9 rounded-full border border-line bg-surface px-3 text-sm text-ink"
-          >
-            {recorded.nylon && <option value="nylon-rec">Nylon, recorded (FreePats)</option>}
-            {recorded.steel && <option value="steel-rec">Steel, recorded (FreePats)</option>}
-            <option value="nylon">Nylon acoustic</option>
-            <option value="steel">Steel acoustic</option>
-            <option value="jazz">Jazz electric</option>
-            <option value="clean">Clean electric</option>
-          </select>
-        </label>
-
-        <div className="ml-auto flex rounded-full border border-line p-0.5 text-sm" role="tablist" aria-label="Notation view">
-          {(["both", "tabs", "score"] as const).map((v) => (
-            <button
-              key={v} role="tab" aria-selected={view === v} onClick={() => setView(v)}
-              className={`focus-ring rounded-full px-3 py-1.5 capitalize transition ${view === v ? "bg-ink text-bg" : "text-ink-2 hover:text-ink"}`}
-            >
-              {v === "both" ? "Tab + staff" : v === "tabs" ? "Tab" : "Staff"}
-            </button>
-          ))}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="flex rounded-full border border-line p-0.5 text-sm" role="tablist" aria-label="Notation view">
+            {(["tabs", "both", "score"] as const).map((v) => (
+              <button
+                key={v} role="tab" aria-selected={view === v} onClick={() => setView(v)}
+                className={`focus-ring rounded-full px-3 py-1 transition ${view === v ? "bg-ink text-bg" : "text-ink-2 hover:text-ink"}`}
+              >
+                {v === "both" ? "Tab + staff" : v === "tabs" ? "Tab" : "Staff"}
+              </button>
+            ))}
+          </div>
+          <span className="flex items-center rounded-full border border-line text-sm" aria-label="Size">
+            <button onClick={() => zoom(-0.15)} className="focus-ring h-8 w-8 rounded-full hover:bg-surface-2" aria-label="Smaller">−</button>
+            <span className="w-10 text-center font-mono text-xs tabular-nums">{Math.round(scale * 100)}%</span>
+            <button onClick={() => zoom(0.15)} className="focus-ring h-8 w-8 rounded-full hover:bg-surface-2" aria-label="Larger">+</button>
+          </span>
+          <details className="relative">
+            <summary className="focus-ring flex h-8 cursor-pointer list-none items-center gap-1 rounded-full border border-line px-3 text-sm text-ink-2 hover:bg-surface-2">⚙ Options</summary>
+            <div className="absolute right-0 z-30 mt-1 w-72 space-y-3 rounded-xl border border-line bg-surface p-3 text-sm shadow-lg">
+              <div className="flex flex-wrap gap-1.5">
+                <Toggle on={metronome} onClick={() => setMetronome((v) => !v)}>Metronome</Toggle>
+                <Toggle on={countIn} onClick={() => setCountIn((v) => !v)}>Count-in</Toggle>
+                <Toggle on={fingering} onClick={() => { setFingering((f) => { writePrefs({ fingering: !f }); return !f; }); }}>Fingerings</Toggle>
+                {song.texture === "fingerstyle" && (
+                  <Toggle on={fretboard} onClick={() => { const v = !fretboard; setFretboard(v); fretboardRef.current = v; writePrefs({ fretboard: v }); }}>Fretboard</Toggle>
+                )}
+                <Toggle on={diagrams} onClick={toggleDiagrams}>Chord diagrams</Toggle>
+                <Toggle on={expressive} onClick={toggleExpressive}>Expressive playback</Toggle>
+              </div>
+              <label className="flex items-center justify-between gap-2 text-ink-2">
+                Sound
+                <select value={sound} onChange={(e) => setSound(e.target.value as GuitarSound)} className="focus-ring h-8 rounded-full border border-line bg-surface px-2 text-sm text-ink">
+                  {recorded.nylon && <option value="nylon-rec">Nylon, recorded</option>}
+                  {recorded.steel && <option value="steel-rec">Steel, recorded</option>}
+                  <option value="nylon">Nylon acoustic</option>
+                  <option value="steel">Steel acoustic</option>
+                  <option value="jazz">Jazz electric</option>
+                  <option value="clean">Clean electric</option>
+                </select>
+              </label>
+              <div className="flex items-center justify-between gap-2 text-ink-2">
+                Bars per line
+                <span className="flex rounded-full border border-line p-0.5">
+                  {[-1, 2, 3, 4].map((n) => (
+                    <button key={n} onClick={() => setRow(n)} aria-pressed={barsPerRow === n} className={`focus-ring rounded-full px-2.5 py-0.5 text-xs ${barsPerRow === n ? "bg-ink text-bg" : "hover:text-ink"}`}>
+                      {n === -1 ? "Auto" : n}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              {fingering && view === "tabs" && <p className="text-xs text-ink-3">In Tab view, fingerings show above single notes. Use Tab + staff to see chord fingerings.</p>}
+              <div className="border-t border-line pt-2">
+                <p className="mb-1 text-xs font-medium tracking-widest text-ink-3 uppercase">Export</p>
+                <div className="flex flex-wrap gap-1.5">
+                  <button onClick={() => atRef.current && apiRef.current && downloadGp(atRef.current, apiRef.current, song.title)} className="focus-ring rounded-full border border-line px-2.5 py-1 text-xs hover:bg-surface-2">Guitar Pro</button>
+                  <button onClick={() => apiRef.current?.downloadMidi()} className="focus-ring rounded-full border border-line px-2.5 py-1 text-xs hover:bg-surface-2">MIDI</button>
+                  <button onClick={() => apiRef.current?.print()} className="focus-ring rounded-full border border-line px-2.5 py-1 text-xs hover:bg-surface-2">Print / PDF</button>
+                </div>
+              </div>
+            </div>
+          </details>
+          <button onClick={toggleFullscreen} title={fullscreen ? "Exit practice view" : "Practice view (full screen)"} className="focus-ring h-8 rounded-full border border-line px-3 text-sm text-ink-2 hover:bg-surface-2">
+            {fullscreen ? "Exit" : "⛶"}
+          </button>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-2 text-sm text-ink-2">
-        <span className="flex items-center gap-1" aria-label="Zoom">
-          Size
-          <button onClick={() => zoom(-0.15)} className="focus-ring h-8 w-8 rounded-full border border-line hover:bg-surface-2" aria-label="Smaller">−</button>
-          <span className="w-11 text-center font-mono text-xs tabular-nums text-ink">{Math.round(scale * 100)}%</span>
-          <button onClick={() => zoom(0.15)} className="focus-ring h-8 w-8 rounded-full border border-line hover:bg-surface-2" aria-label="Larger">+</button>
-        </span>
-        <span className="flex items-center gap-1">
-          Bars per line
-          <span className="flex rounded-full border border-line p-0.5">
-            {[-1, 2, 3, 4].map((n) => (
-              <button
-                key={n} onClick={() => setRow(n)} aria-pressed={barsPerRow === n}
-                className={`focus-ring rounded-full px-2.5 py-1 text-xs ${barsPerRow === n ? "bg-ink text-bg" : "hover:text-ink"}`}
-              >
-                {n === -1 ? "Auto" : n}
-              </button>
-            ))}
-          </span>
-        </span>
-        <button
-          onClick={() => { setFingering((f) => { writePrefs({ fingering: !f }); return !f; }); }} aria-pressed={fingering}
-          title="Left-hand finger numbers and right-hand p-i-m-a, computed for every note. In Tab view alphaTab shows them for single notes; switch to Tab + staff to see chord fingerings."
-          className={`focus-ring h-8 rounded-full border px-3 ${fingering ? "border-accent bg-accent-soft text-ink" : "border-line hover:bg-surface-2"}`}
-        >
-          Fingerings
-        </button>
-        {song.texture === "fingerstyle" && (
-          <button
-            onClick={() => { const v = !fretboard; setFretboard(v); fretboardRef.current = v; writePrefs({ fretboard: v }); }} aria-pressed={fretboard}
-            title="Live fretboard under the score: current notes with finger numbers, next notes faint"
-            className={`focus-ring h-8 rounded-full border px-3 ${fretboard ? "border-accent bg-accent-soft text-ink" : "border-line hover:bg-surface-2"}`}
-          >
-            Fretboard
-          </button>
-        )}
-        <button
-          onClick={toggleExpressive} aria-pressed={expressive}
-          title="Melody louder than bass, soft inner voices, rolled big chords"
-          className={`focus-ring h-8 rounded-full border px-3 ${expressive ? "border-accent bg-accent-soft text-ink" : "border-line hover:bg-surface-2"}`}
-        >
-          Expressive playback
-        </button>
-        <details className="relative">
-          <summary className="focus-ring flex h-8 cursor-pointer list-none items-center rounded-full border border-line px-3 hover:bg-surface-2">Export ▾</summary>
-          <div className="absolute z-10 mt-1 flex w-56 flex-col rounded-xl border border-line bg-surface p-1 text-sm shadow-lg">
-            <button onClick={() => atRef.current && apiRef.current && downloadGp(atRef.current, apiRef.current, song.title)} className="rounded-lg px-3 py-2 text-left hover:bg-surface-2">
-              Guitar Pro file (.gp)<span className="block text-xs text-ink-3">Guitar Pro 8, MuseScore, TuxGuitar</span>
-            </button>
-            <button onClick={() => apiRef.current?.downloadMidi()} className="rounded-lg px-3 py-2 text-left hover:bg-surface-2">
-              MIDI file (.mid)<span className="block text-xs text-ink-3">Any DAW or sampler</span>
-            </button>
-            <button onClick={() => apiRef.current?.print()} className="rounded-lg px-3 py-2 text-left hover:bg-surface-2">
-              Print / PDF<span className="block text-xs text-ink-3">Opens a print view</span>
-            </button>
-          </div>
-        </details>
-        <button onClick={toggleFullscreen} className="focus-ring ml-auto h-8 rounded-full border border-line px-3 hover:bg-surface-2">
-          {fullscreen ? "Exit practice view" : "⛶ Practice view"}
-        </button>
-      </div>
-
       {loop && (
-        <div className="flex items-center justify-between bg-accent-soft px-4 py-2 text-sm text-ink">
+        <div className="flex items-center justify-between bg-accent-soft px-4 py-1.5 text-sm text-ink">
           <span>{loop.startBar === loop.endBar ? `Looping bar ${loop.startBar + 1}` : `Looping bars ${loop.startBar + 1}–${loop.endBar + 1}`}</span>
           <button onClick={() => onLoopChange(null)} className="focus-ring rounded px-2 font-medium text-accent hover:underline">Clear loop</button>
         </div>
       )}
 
-      <div ref={scrollRef} className={`relative overflow-y-auto bg-paper ${fullscreen ? "min-h-0 flex-1" : "max-h-[80vh]"}`}>
+      <div ref={scrollRef} className={`relative overflow-y-auto bg-paper ${fullscreen ? "min-h-0 flex-1" : "h-[calc(100vh-11rem)] min-h-[420px]"}`}>
         {error && <p className="p-6 text-sm text-red-700">Score error: {error}</p>}
         {rendering && !error && <div className="absolute inset-x-6 top-6 h-40 rounded-xl skeleton opacity-60" aria-hidden />}
         {/* alphaTab renders sheet music in black on this paper surface in both themes. */}
@@ -407,7 +395,7 @@ const PauseIcon = () => (
   <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden><path d="M3 1.5h3v11H3zM8 1.5h3v11H8z" fill="currentColor" /></svg>
 );
 
-type ReadingPrefs = { view?: StaffView; scale?: number; barsPerRow?: number; expressive?: boolean; sound?: GuitarSound; fingering?: boolean; fretboard?: boolean };
+type ReadingPrefs = { view?: StaffView; scale?: number; barsPerRow?: number; expressive?: boolean; sound?: GuitarSound; fingering?: boolean; fretboard?: boolean; diagrams?: boolean };
 const PREFS_KEY = "woodshed.reading";
 function readPrefs(): ReadingPrefs {
   try { return JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as ReadingPrefs; } catch { return {}; }
