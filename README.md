@@ -99,6 +99,20 @@ npm run classtab:update   # downloads ClassTab's monthly zip (~14 MB) into data/
 The tabs belong to ClassTab and its transcribers. They stay on your machine (`data/` is git-ignored) and are for
 personal study. Open **Library → Classical** to browse them.
 
+## 🌍 Public showcase (GitHub Pages)
+
+A read-only build of the app, with playback, fingerings, fretboard, moments, practice path and review, is published as a static site:
+
+```bash
+npx tsx scripts/showcase-export.mts            # list your library
+npx tsx scripts/showcase-export.mts <id> <id>  # publish these pieces → showcase/songs.json
+SHOWCASE=1 npx next build                      # static site in showcase-out/
+```
+
+Pushing to `main` runs `.github/workflows/pages.yml`, which tests, builds and deploys to GitHub Pages. The custom domain is
+`tabs.bngrd.com` (`public/CNAME`). **Only publish traditional, public-domain or original pieces:** arrangements of
+copyrighted songs and ClassTab content stay in your local app.
+
 ## ⏱️ What to expect
 
 | Request | Typical time |

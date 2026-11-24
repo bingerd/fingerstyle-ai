@@ -48,3 +48,4 @@ eval/results/*.json
 
 # local data: your library and third-party downloads (e.g. ClassTab) stay on your machine
 data/
+showcase-out/

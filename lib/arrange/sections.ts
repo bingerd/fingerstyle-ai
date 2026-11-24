@@ -66,6 +66,7 @@ export function blueprintPrompt(opts: { request: string; direction: Direction; p
       ? `Form: exactly ${opts.tune.bars.length} bars, following the tune's own phrases (group its bars into sections).`
       : `Form: ${opts.minBars}–${opts.maxBars} bars, e.g. Intro (2–4) · A · A′ (varied) · B (contrast) · Climax (fullest texture, signature moves) · Outro/ending (2–4).`,
     "Make it a finished, filmable piece: one memorable hook (state where it returns), a groove cell that recurs with variation, a dynamic arc that peaks in the climax, and a big ending.",
+    "title: the name players see, e.g. \"Song Name: Style\" (never words like blueprint or plan).",
     "chords: one entry per bar separated by '|', using standard symbols. The bible (tuning, capo, transpose, key, tempo, groove, hook) is binding for every section.",
   ];
   if (opts.tune) lines.push("", `IMPORTED TUNE "${opts.tune.title}" (NOTE@start(duration), quarter beats):`, tuneToText(opts.tune));

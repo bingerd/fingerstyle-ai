@@ -14,6 +14,18 @@ import path from "node:path";
 const DL = path.join("data", "soundfonts", "dl");
 const X = path.join("data", "soundfonts", "x");
 const OUT = path.join("public", "alphatab");
+
+// FREEPATS=nylon installs only the CC0 nylon guitar (used for the public showcase build).
+const only = process.env.FREEPATS;
+
+/** Extract with bsdtar (macOS) or tar / 7z (Linux CI). */
+function extract(archive: string, into: string) {
+  const has = (bin: string) => { try { execFileSync("which", [bin], { stdio: "ignore" }); return true; } catch { return false; } };
+  if (has("bsdtar")) execFileSync("bsdtar", ["-xf", archive, "-C", into], { stdio: "inherit" });
+  else if (archive.endsWith(".7z")) execFileSync("7z", ["x", "-y", `-o${into}`, archive], { stdio: "inherit" });
+  else execFileSync("tar", ["-xf", archive, "-C", into], { stdio: "inherit" });
+}
+
 const FONTS = [
   { url: "https://freepats.zenvoid.org/Guitar/SpanishClassicalGuitar/SpanishClassicalGuitar-SF2-20190618.7z", out: "freepats-nylon.sf2", program: 105 },
   { url: "https://freepats.zenvoid.org/Guitar/FSS-SteelStringGuitar/FSS-SteelStringGuitar-SF2-20200521.tar.xz", out: "freepats-steel.sf2", program: 106 },
@@ -34,14 +46,14 @@ export function renumber(sf2: Buffer, program: number): Buffer {
 
 mkdirSync(DL, { recursive: true });
 mkdirSync(X, { recursive: true });
-for (const f of FONTS) {
+for (const f of FONTS.filter((x) => !only || x.out.includes(only))) {
   const archive = path.join(DL, path.basename(f.url));
   if (!existsSync(archive)) {
     console.log(`Downloading ${f.url}…`);
     execFileSync("curl", ["-fsSL", "-o", archive, f.url], { stdio: "inherit" });
   }
   const dir = path.join(X, path.basename(f.url).replace(/\.(7z|tar\.xz)$/, ""));
-  if (!existsSync(dir)) execFileSync("bsdtar", ["-xf", archive, "-C", X], { stdio: "inherit" });
+  if (!existsSync(dir)) extract(archive, X);
   const sf2 = readdirSync(dir).find((n) => n.endsWith(".sf2"));
   if (!sf2) throw new Error(`no .sf2 in ${dir}`);
   writeFileSync(path.join(OUT, f.out), renumber(readFileSync(path.join(dir, sf2)), f.program));
