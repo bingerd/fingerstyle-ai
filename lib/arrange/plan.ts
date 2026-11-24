@@ -27,6 +27,8 @@ export const Controls = z.object({
   reharm: z.enum([AUTO, ...REHARM_LEVELS]).default(AUTO),
   fidelity: z.enum([AUTO, ...FIDELITIES]).default(AUTO),
   position: z.string().max(100).default("No preference"),
+  /** short = one 8–16 bar sketch; full = a complete 32–48 bar piece written section by section. */
+  length: z.enum([AUTO, "short", "full"]).default(AUTO),
   /** How many distinct arrangements to write and rank. */
   alternatives: z.number().int().min(1).max(3).default(1),
 });

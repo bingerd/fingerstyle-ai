@@ -97,7 +97,7 @@ export function reviewSong(song: Song, opts: { tune?: Tune | null; prefs?: Prefs
     const score = fidelity === "exact" ? m.exact : fidelity === "embellished" ? (m.exact + m.loose) / 2 : m.loose;
     criteria.push({
       key: "melody", label: "Melody kept", score, status: "verified",
-      detail: `${pct(m.exact)} of melody notes on the exact beat and pitch, ${pct(m.loose)} within half a beat${m.transpose ? `, transposed ${m.transpose > 0 ? "+" : ""}${m.transpose}` : ""}${strictIssues && fidelity !== "exact" ? ` (${fidelity} mode allows deviations)` : ""}.`,
+      detail: `${tune.source === "memory" ? "Checked against the melody you confirmed by ear: " : ""}${pct(m.exact)} of melody notes on the exact beat and pitch, ${pct(m.loose)} within half a beat${m.transpose ? `, transposed ${m.transpose > 0 ? "+" : ""}${m.transpose}` : ""}${strictIssues && fidelity !== "exact" ? ` (${fidelity} mode allows deviations)` : ""}.`,
     });
   } else {
     criteria.push({

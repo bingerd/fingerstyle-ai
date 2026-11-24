@@ -83,7 +83,7 @@ function Mine({ library, activeId, onOpen, onDelete }: { library: SavedSong[]; a
                 {[s.song.style, s.song.key, `${s.song.tempo} bpm`, s.song.difficulty, s.song.texture, s.song.capo ? `capo ${s.song.capo}` : "", s.song.tuning !== "standard" ? s.song.tuning : ""]
                   .filter(Boolean).map((t) => <span key={t} className="max-w-full truncate rounded-full bg-surface-2 px-2 py-0.5 text-ink-2">{t}</span>)}
                 <span className={`rounded-full px-2 py-0.5 ${s.tune ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" : "bg-warn/15 text-warn"}`}>
-                  {s.tune ? "melody verified" : "from memory"}
+                  {s.tune ? (s.tune.source === "memory" ? "melody confirmed by ear" : "melody verified") : "from memory"}
                 </span>
               </span>
             </button>

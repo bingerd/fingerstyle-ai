@@ -113,7 +113,7 @@ export function ReviewPanel({ song, tune, direction }: { song: Song; tune: Tune 
       </div>
       {melody && (
         <p className={`mt-3 rounded-xl px-3 py-2 text-sm ${melody.status === "verified" ? "bg-emerald-500/10 text-emerald-800 dark:text-emerald-200" : "bg-warn/10 text-warn"}`}>
-          <b>{melody.status === "verified" ? `Melody checked against your file: ${Math.round((melody.score ?? 0) * 100)}%.` : "Melody not verified."}</b>{" "}
+          <b>{melody.status === "verified" ? `Melody checked ${tune?.source === "memory" ? "against the melody you confirmed" : "against your file"}: ${Math.round((melody.score ?? 0) * 100)}%.` : "Melody not verified."}</b>{" "}
           {melody.detail}
         </p>
       )}

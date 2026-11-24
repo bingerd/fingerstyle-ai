@@ -15,6 +15,7 @@ import { StudyNotes } from "./StudyNotes";
 import { Alternatives, ReviewPanel, type Candidate } from "./Review";
 import { LibraryView } from "./LibraryView";
 import { Moments } from "./Moments";
+import { PracticePlan } from "./PracticePlan";
 import type { ArrangementPlan, Direction } from "@/lib/arrange/plan";
 
 type Preview = { chordId: string; option: ReharmOption; index: number };
@@ -379,7 +380,7 @@ export function Studio() {
           onArrangeFile={(f) => { setPendingFile(f); setView("studio"); if (song) { setShowComposer(true); setSelectedId(null); } }}
         />
       ) : !song ? (
-        <Landing initialFile={pendingFile} busy={busy} onSubmit={(i) => arrange(i)} onDemo={() => openSaved({ id: "", savedAt: "", song: DEMO_SONG })} library={library} onOpen={openSaved} onDelete={remove} />
+        <Landing initialFile={pendingFile} provider={provider} busy={busy} onSubmit={(i) => arrange(i)} onDemo={() => openSaved({ id: "", savedAt: "", song: DEMO_SONG })} library={library} onOpen={openSaved} onDelete={remove} />
       ) : (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_400px]">
           <main className="min-w-0 space-y-6">
@@ -405,7 +406,7 @@ export function Studio() {
                 arrange(
                   {
                     request: refine, style: song.style, difficulty: song.difficulty, position: lastInput?.position ?? "No preference", texture: song.texture,
-                    flair: direction?.flair ?? "auto", reharm: direction?.reharm ?? "auto", fidelity: direction?.fidelity ?? "auto", alternatives: 1,
+                    flair: direction?.flair ?? "auto", reharm: direction?.reharm ?? "auto", fidelity: direction?.fidelity ?? "auto", alternatives: 1, length: "short",
                   },
                   { kind: "revise", existing: song },
                 );
@@ -447,9 +448,27 @@ export function Studio() {
             <Moments
               song={displaySong!}
               onPractice={(m) => {
-                setLoop({ startBar: m.startBar, endBar: m.endBar });
+                // Loop at least two bars so the moment is practised in context.
+                const bars = song.sections.reduce((n, s) => n + s.bars.length, 0);
+                setLoop({ startBar: m.startBar, endBar: Math.min(bars - 1, Math.max(m.endBar, m.startBar + 1)) });
                 setSpeedRequest((r) => ({ value: m.speed, n: (r?.n ?? 0) + 1 }));
                 setPlayRequest((n) => n + 1);
+              }}
+            />
+
+            <PracticePlan
+              song={displaySong!}
+              savedId={savedId}
+              mastered={library.find((e) => e.id === savedId)?.progress?.mastered ?? []}
+              onPractice={(range, speed) => {
+                setLoop(range);
+                setSpeedRequest((r) => ({ value: speed, n: (r?.n ?? 0) + 1 }));
+                setPlayRequest((n) => n + 1);
+              }}
+              onProgress={(mastered) => {
+                if (!savedId) return;
+                setLibrary((lib) => lib.map((e) => (e.id === savedId ? { ...e, progress: { mastered } } : e)));
+                fetch(`/api/songs/${savedId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mastered }) });
               }}
             />
 
@@ -483,7 +502,7 @@ export function Studio() {
                 onClose={() => { setSelectedId(null); setPreview(null); setLoop(null); }}
               />
             ) : showComposer ? (
-              <Composer key={pendingFile?.name} initialFile={pendingFile} busy={busy} onSubmit={(i) => arrange(i)} />
+              <Composer key={pendingFile?.name} initialFile={pendingFile} busy={busy} provider={provider} onSubmit={(i) => arrange(i)} />
             ) : (
               <SidePanel library={library} onOpen={openSaved} onDelete={remove} activeId={savedId} />
             )}
@@ -570,7 +589,7 @@ function Library({ library, onOpen, onDelete, activeId }: { library: SavedSong[]
   );
 }
 
-function Landing(props: { initialFile: File | null; busy: boolean; onSubmit: (i: ComposerInput) => void; onDemo: () => void; library: SavedSong[]; onOpen: (s: SavedSong) => void; onDelete: (id: string) => void }) {
+function Landing(props: { initialFile: File | null; provider: string; busy: boolean; onSubmit: (i: ComposerInput) => void; onDemo: () => void; library: SavedSong[]; onOpen: (s: SavedSong) => void; onDelete: (id: string) => void }) {
   return (
     <div className="mx-auto grid max-w-6xl gap-10 pt-6 lg:grid-cols-[1fr_520px] lg:pt-14">
       <div className="rise">
@@ -590,7 +609,7 @@ function Landing(props: { initialFile: File | null; busy: boolean; onSubmit: (i:
         </div>
       </div>
       <div className="rise" style={{ animationDelay: "80ms" }}>
-        <Composer key={props.initialFile?.name} initialFile={props.initialFile} busy={props.busy} onSubmit={props.onSubmit} />
+        <Composer key={props.initialFile?.name} initialFile={props.initialFile} provider={props.provider} busy={props.busy} onSubmit={props.onSubmit} />
       </div>
     </div>
   );

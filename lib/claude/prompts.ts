@@ -59,7 +59,7 @@ const REHARM_RULES: Record<Direction["reharm"], string> = {
   bold: "Rethink the harmony (tritone subs, chromatic planing, borrowed keys, reharmonized cadences). Every melody note must still sound like a chord tone or an intended tension over the new chord.",
 };
 
-const FIDELITY_RULES: Record<Direction["fidelity"], string> = {
+export const FIDELITY_RULES: Record<Direction["fidelity"], string> = {
   exact: "- Fingerstyle: at every melody note's start there must be a beat, and that beat's HIGHEST note must be the melody note (plus transpose semitones). A program checks this note by note.",
   embellished: "- Melody may be embellished: every melody note (plus transpose) must be the HIGHEST note of some beat within half a beat of its original start (anticipations, delayed entries, grace notes, slides/hammer-ons into it and short passing notes between melody notes are fine). A program checks this note by note.",
   free: "- Treat the melody as a theme to vary: keep the main hooks intact at least once so the song is recognizable; elsewhere you may re-rhythm, ornament or octave-displace phrases.",

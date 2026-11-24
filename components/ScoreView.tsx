@@ -7,6 +7,7 @@ import { songToAlphaTex, type GuitarSound, type StaffView } from "@/lib/alphatex
 
 import { loadAlphaTab, pickSoundFont, recordedGuitars } from "@/lib/client/alphatab";
 import { downloadGp, humanize } from "@/lib/client/humanize";
+import { Fretboard } from "./Fretboard";
 
 export type LoopRange = { startBar: number; endBar: number } | null;
 
@@ -40,6 +41,9 @@ export function ScoreView({
   const [fullscreen, setFullscreen] = useState(false);
   const [expressive, setExpressive] = useState(true);
   const [fingering, setFingering] = useState(true);
+  const [fretboard, setFretboard] = useState(false);
+  const fretboardRef = useRef(false);
+  const [activeBeat, setActiveBeat] = useState<{ bar: number; beat: number } | null>(null);
   const expressiveRef = useRef(true);
   const atRef = useRef<typeof AlphaTabNS | null>(null);
   const [sound, setSoundState] = useState<GuitarSound>(song.texture === "fingerstyle" ? "nylon" : "steel");
@@ -109,6 +113,7 @@ export function ScoreView({
         if (available(prefs.sound)) setSoundState(prefs.sound!);
         else if (rec.nylon && initialTexture.current === "fingerstyle") setSoundState("nylon-rec");
         if (prefs.fingering === false) setFingering(false);
+        if (prefs.fretboard) { setFretboard(true); fretboardRef.current = true; }
         if (prefs.expressive === false) { setExpressive(false); expressiveRef.current = false; }
         atRef.current = at;
         const api = new at.AlphaTabApi(hostRef.current, {
@@ -123,6 +128,7 @@ export function ScoreView({
           },
         } as AlphaTabNS.json.SettingsJson);
         apiRef.current = api;
+        applyFingeringMode(api, texRef.current);
         api.settings.notation.elements.set(at.NotationElement.EffectDynamics, false);
         api.updateSettings();
         api.scoreLoaded.on((score) => { if (expressiveRef.current) humanize(at, score); });
@@ -151,7 +157,10 @@ export function ScoreView({
           }
         });
         api.playerStateChanged.on((e) => setPlaying(e.state === at.synth.PlayerState.Playing));
-        api.playedBeatChanged.on((beat) => lookup.current.onActiveChord(toChord(beat)));
+        api.playedBeatChanged.on((beat) => {
+          lookup.current.onActiveChord(toChord(beat));
+          if (fretboardRef.current && beat.voice.bar.staff.track.index === 0) setActiveBeat({ bar: beat.voice.bar.index, beat: beat.index });
+        });
         api.beatMouseDown.on((beat) => {
           const id = toChord(beat);
           if (id) lookup.current.onChordClick(id);
@@ -171,6 +180,7 @@ export function ScoreView({
     texRef.current = tex;
     const api = apiRef.current;
     if (!api) return;
+    applyFingeringMode(api, tex);
     api.stop();
     api.tex(tex, [0]);
   }, [tex]);
@@ -320,11 +330,20 @@ export function ScoreView({
         </span>
         <button
           onClick={() => { setFingering((f) => { writePrefs({ fingering: !f }); return !f; }); }} aria-pressed={fingering}
-          title="Left-hand finger numbers (1–4) and right-hand p-i-m-a, computed for every note"
+          title="Left-hand finger numbers and right-hand p-i-m-a, computed for every note. In Tab view alphaTab shows them for single notes; switch to Tab + staff to see chord fingerings."
           className={`focus-ring h-8 rounded-full border px-3 ${fingering ? "border-accent bg-accent-soft text-ink" : "border-line hover:bg-surface-2"}`}
         >
           Fingerings
         </button>
+        {song.texture === "fingerstyle" && (
+          <button
+            onClick={() => { const v = !fretboard; setFretboard(v); fretboardRef.current = v; writePrefs({ fretboard: v }); }} aria-pressed={fretboard}
+            title="Live fretboard under the score: current notes with finger numbers, next notes faint"
+            className={`focus-ring h-8 rounded-full border px-3 ${fretboard ? "border-accent bg-accent-soft text-ink" : "border-line hover:bg-surface-2"}`}
+          >
+            Fretboard
+          </button>
+        )}
         <button
           onClick={toggleExpressive} aria-pressed={expressive}
           title="Melody louder than bass, soft inner voices, rolled big chords"
@@ -353,7 +372,7 @@ export function ScoreView({
 
       {loop && (
         <div className="flex items-center justify-between bg-accent-soft px-4 py-2 text-sm text-ink">
-          <span>Looping bars {loop.startBar + 1}–{loop.endBar + 1}</span>
+          <span>{loop.startBar === loop.endBar ? `Looping bar ${loop.startBar + 1}` : `Looping bars ${loop.startBar + 1}–${loop.endBar + 1}`}</span>
           <button onClick={() => onLoopChange(null)} className="focus-ring rounded px-2 font-medium text-accent hover:underline">Clear loop</button>
         </div>
       )}
@@ -364,6 +383,7 @@ export function ScoreView({
         {/* alphaTab renders sheet music in black on this paper surface in both themes. */}
         <div ref={hostRef} className="text-black" />
       </div>
+      {fretboard && song.texture === "fingerstyle" && <Fretboard song={song} active={activeBeat} />}
     </section>
   );
 }
@@ -387,11 +407,22 @@ const PauseIcon = () => (
   <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden><path d="M3 1.5h3v11H3zM8 1.5h3v11H8z" fill="currentColor" /></svg>
 );
 
-type ReadingPrefs = { view?: StaffView; scale?: number; barsPerRow?: number; expressive?: boolean; sound?: GuitarSound; fingering?: boolean };
+type ReadingPrefs = { view?: StaffView; scale?: number; barsPerRow?: number; expressive?: boolean; sound?: GuitarSound; fingering?: boolean; fretboard?: boolean };
 const PREFS_KEY = "woodshed.reading";
 function readPrefs(): ReadingPrefs {
   try { return JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as ReadingPrefs; } catch { return {}; }
 }
 function writePrefs(p: ReadingPrefs) {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify({ ...readPrefs(), ...p })); } catch {}
+}
+
+/**
+ * Tab-only view: alphaTab can show fingerings above the tab for single notes (runs, melody);
+ * chord fingerings only render on the standard staff, so "Tab + staff" uses the staff.
+ */
+function applyFingeringMode(api: AlphaTabNS.AlphaTabApi, tex: string) {
+  const at = window.alphaTab;
+  if (!at) return;
+  api.settings.notation.fingeringMode = tex.includes("\\staff {tabs}") ? at.FingeringMode.SingleNoteEffectBand : at.FingeringMode.ScoreDefault;
+  api.updateSettings();
 }

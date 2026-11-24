@@ -7,6 +7,8 @@ import { PROVIDERS, type ProviderId } from "@/lib/llm/providers";
 import { Tune } from "@/lib/tune/tune";
 import { formatIssues, validateAgainstTune, validateSong } from "@/lib/theory/validate";
 import { BarFixes, barErrors, repairPrompt, spliceBars } from "@/lib/arrange/repair";
+import { Blueprint, SectionPart, assemble, blueprintPrompt, sectionPrompt, sectionStarts, validateBlueprint, validateSection } from "@/lib/arrange/sections";
+import { FIDELITY_RULES } from "@/lib/claude/prompts";
 import {
   ArrangementPlan, Controls, Direction, PLAN_SYSTEM, directionFromControls, lockDirection, needsPlan, planPrompt, validatePlan,
 } from "@/lib/arrange/plan";
@@ -29,9 +31,29 @@ type Body = z.infer<typeof Body>;
 
 const MAX_FIX_ROUNDS = 2;
 
+/** Blueprint → all sections in parallel → stitched song. */
+async function writeSectioned(opts: { provider: ProviderId; request: string; position: string; direction: Direction; tune?: Tune }): Promise<Song> {
+  const { provider, direction, tune } = opts;
+  const want = tune ? { exactBars: tune.bars.length, minBars: tune.bars.length, maxBars: tune.bars.length } : { minBars: 32, maxBars: 48 };
+  const bp = (await generateValidated({
+    provider, schema: Blueprint, system: ARRANGE_SYSTEM, effort: "medium", maxRepairs: 1,
+    prompt: blueprintPrompt({ ...opts, minBars: want.minBars, maxBars: want.maxBars }),
+    validate: (b) => validateBlueprint(b, want),
+  })).value;
+  const starts = sectionStarts(bp);
+  const parts = await Promise.all(bp.sections.map((_, index) =>
+    generateValidated({
+      provider, schema: SectionPart, system: ARRANGE_SYSTEM, effort: "high", maxRepairs: 1,
+      prompt: sectionPrompt({ bp, index, startBar: starts[index], direction, tune, fidelityRule: FIDELITY_RULES[direction.fidelity] }),
+      validate: (p) => validateSection(p, { bp, index, startBar: starts[index], tune, fidelity: direction.fidelity, style: direction.style }),
+    }).then((r) => r.value),
+  ));
+  return assemble(bp, parts, direction.style);
+}
+
 async function arrangeOne(opts: {
   provider: ProviderId; request: string; texture: "comping" | "fingerstyle"; position: string;
-  direction: Direction; tune?: Tune; existing?: Song;
+  direction: Direction; tune?: Tune; existing?: Song; full?: boolean;
 }) {
   const { tune, texture, direction, provider } = opts;
   const validate = (song: Song) => [
@@ -41,7 +63,9 @@ async function arrangeOne(opts: {
   ];
   const prompt = arrangePrompt(opts);
   const effort = tune || texture === "fingerstyle" ? "high" : "medium";
-  let song = (await generateValidated({ provider, schema: Song, system: ARRANGE_SYSTEM, prompt, validate, effort, maxRepairs: 0 })).value;
+  let song = opts.full && texture === "fingerstyle" && !opts.existing
+    ? await writeSectioned(opts)
+    : (await generateValidated({ provider, schema: Song, system: ARRANGE_SYSTEM, prompt, validate, effort, maxRepairs: 0 })).value;
 
   // Repair: only the broken bars go back to the model (fast); song-level problems need a full rewrite.
   let repairs = 0;
@@ -97,6 +121,9 @@ async function runArrange(data: Body, existing: Song | undefined, stage: (s: str
   // An imported tune is always arranged with explicit tab so the melody can be checked.
   const texture = tune ? "fingerstyle" : data.texture;
   const controls = { ...data, texture } as Controls;
+  // Full-length pieces by default for fingerstyle; imported tunes of up to 16 bars stay one-shot.
+  const full = !existing && texture === "fingerstyle" &&
+    (data.length === "full" || (data.length === "auto" && (!tune || tune.bars.length > 16)));
 
   // 1. Decide the direction(s): from the user's controls, or planned from the song itself.
   let analysis: ArrangementPlan["analysis"] | null = null;
@@ -123,7 +150,7 @@ async function runArrange(data: Body, existing: Song | undefined, stage: (s: str
   // Each arrangement is saved and published the moment it is ready, so the UI can show it right away.
   const settled = await Promise.allSettled(
     directions.map((direction, i) =>
-      arrangeOne({ provider, request, texture, position, direction, tune, existing })
+      arrangeOne({ provider, request, texture, position, direction, tune, existing, full })
         .then(async (c) => {
           const candidate = { id: `${Date.now().toString(36)}-${i}`, ...c, savedId: data.autosave ? (await saveSong(c.song, undefined, tune, c.direction)).id : null };
           partial(candidate);

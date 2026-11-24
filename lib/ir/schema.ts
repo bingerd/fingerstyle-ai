@@ -146,4 +146,6 @@ export const ReharmResponse = z.object({
 export type ReharmResponse = z.infer<typeof ReharmResponse>;
 
 /** Saved library entry. */
-export type SavedSong = { id: string; savedAt: string; song: Song; tune?: Tune; direction?: Direction };
+/** Practice progress: keys of mastered lesson steps ("start-end-speed"). */
+export type Progress = { mastered: string[] };
+export type SavedSong = { id: string; savedAt: string; song: Song; tune?: Tune; direction?: Direction; progress?: Progress };

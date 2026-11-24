@@ -80,11 +80,29 @@ function run(bin: string, args: string[], input: string, cwd?: string): Promise<
 export type StructuredRequest = { system: string; prompt: string; schema: object; effort: Effort };
 
 /** Run one structured-output request and return the raw JSON value (validated by the caller). */
+/** At most this many model calls run at once (sections × alternatives can fan out widely). */
+const MAX_CONCURRENT = 6;
+const g = globalThis as unknown as { __llmSlots?: { active: number; queue: (() => void)[] } };
+const slots = (g.__llmSlots ??= { active: 0, queue: [] });
+
+async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (slots.active >= MAX_CONCURRENT) await new Promise<void>((r) => slots.queue.push(r));
+  slots.active++;
+  try {
+    return await fn();
+  } finally {
+    slots.active--;
+    slots.queue.shift()?.();
+  }
+}
+
 export async function runStructured(provider: ProviderId, req: StructuredRequest): Promise<unknown> {
   const schema = sanitizeSchema(req.schema) as Record<string, unknown>;
-  if (provider === "claude") return runClaudeCli(req, schema);
-  if (provider === "codex") return runCodexCli(req, schema);
-  return runAnthropicApi(req, schema);
+  return withSlot(() => {
+    if (provider === "claude") return runClaudeCli(req, schema);
+    if (provider === "codex") return runCodexCli(req, schema);
+    return runAnthropicApi(req, schema);
+  });
 }
 
 async function runClaudeCli(req: StructuredRequest, schema: object): Promise<unknown> {

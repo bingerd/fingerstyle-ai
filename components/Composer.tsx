@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Tune } from "@/lib/tune/tune";
 import type { Controls } from "@/lib/arrange/plan";
 import { TuneImport } from "./TuneImport";
+import { MelodyCheck } from "./MelodyCheck";
 
 export const STYLES = [
   "Percussive pop fingerstyle", "Fingerstyle jazz", "Neo-soul / lo-fi", "Travis picking", "Harp harmonics & campanella",
@@ -27,6 +28,7 @@ const AUTO_OPT = { value: "auto", label: "Auto", hint: "AI decides" } as const;
 const FLAIR_OPTS: Opt<Controls["flair"]>[] = [AUTO_OPT, { value: "clean", label: "Clean", hint: "Tasteful" }, { value: "expressive", label: "Expressive", hint: "Slides, harmonics" }, { value: "showstopper", label: "Showstopper", hint: "Slaps, runs" }];
 const LEVEL_OPTS: Opt<Controls["difficulty"]>[] = [AUTO_OPT, { value: "beginner", label: "Beginner" }, { value: "intermediate", label: "Intermediate" }, { value: "advanced", label: "Advanced" }];
 const REHARM_OPTS: Opt<Controls["reharm"]>[] = [AUTO_OPT, { value: "none", label: "None", hint: "Original chords" }, { value: "light", label: "Light", hint: "Colour tones" }, { value: "moderate", label: "Moderate", hint: "Some subs" }, { value: "bold", label: "Bold", hint: "Rethink it" }];
+const LENGTH_OPTS: Opt<Controls["length"]>[] = [{ value: "auto", label: "Auto", hint: "Full unless short tune" }, { value: "short", label: "Sketch", hint: "8–16 bars, faster" }, { value: "full", label: "Full piece", hint: "32–48 bars, sections" }];
 const FIDELITY_OPTS: Opt<Controls["fidelity"]>[] = [AUTO_OPT, { value: "exact", label: "Exact", hint: "Every note" }, { value: "embellished", label: "Embellished", hint: "Ornaments, ±½ beat" }, { value: "free", label: "Free", hint: "Theme & variation" }];
 
 function Segmented<T extends string>({ legend, value, options, onChange }: { legend: string; value: T; options: Opt<T>[]; onChange: (v: T) => void }) {
@@ -48,7 +50,7 @@ function Segmented<T extends string>({ legend, value, options, onChange }: { leg
   );
 }
 
-export function Composer({ busy, onSubmit, initialFile }: { busy: boolean; onSubmit: (input: ComposerInput) => void; initialFile?: File | null }) {
+export function Composer({ busy, onSubmit, initialFile, provider = "claude" }: { busy: boolean; onSubmit: (input: ComposerInput) => void; initialFile?: File | null; provider?: string }) {
   const [request, setRequest] = useState("");
   const [direction, setDirection] = useState("");
   const [style, setStyle] = useState("auto");
@@ -58,10 +60,13 @@ export function Composer({ busy, onSubmit, initialFile }: { busy: boolean; onSub
   const [reharm, setReharm] = useState<Controls["reharm"]>("auto");
   const [fidelity, setFidelity] = useState<Controls["fidelity"]>("auto");
   const [alternatives, setAlternatives] = useState(2);
+  const [length, setLength] = useState<Controls["length"]>("auto");
   const [position, setPosition] = useState(POSITIONS[0]);
   const [texture, setTexture] = useState<Controls["texture"]>("fingerstyle");
   const [source, setSource] = useState<"describe" | "import">(initialFile ? "import" : "describe");
   const [tune, setTune] = useState<Tune | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [confirmed, setConfirmed] = useState<Tune | null>(null);
 
   const finalStyle = custom.trim() || style;
   const fingerstyle = source === "import" || texture === "fingerstyle";
@@ -72,11 +77,11 @@ export function Composer({ busy, onSubmit, initialFile }: { busy: boolean; onSub
       className="card space-y-5 p-5"
       onSubmit={(e) => {
         e.preventDefault();
-        const useTune = source === "import" && tune ? tune : undefined;
+        const useTune = source === "import" && tune ? tune : source === "describe" && confirmed ? confirmed : undefined;
         const text = [request.trim(), direction.trim() && `Direction: ${direction.trim()}`].filter(Boolean).join("\n");
         onSubmit({
           request: text, style: finalStyle, difficulty, position, texture: useTune ? "fingerstyle" : texture,
-          flair, reharm, fidelity, alternatives, tune: useTune,
+          flair, reharm, fidelity, alternatives, length, tune: useTune,
         });
       }}
     >
@@ -115,9 +120,21 @@ export function Composer({ busy, onSubmit, initialFile }: { busy: boolean; onSub
                 </button>
               ))}
             </div>
-            <p className="mt-2 text-xs leading-relaxed text-ink-3">
-              A song named here is arranged from the model&apos;s memory, so its melody can&apos;t be verified. Import a file for a note-by-note check.
-            </p>
+            {confirmed ? (
+              <p className="mt-2 flex items-center justify-between gap-2 rounded-xl bg-emerald-500/10 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-200">
+                <span>✓ Melody confirmed by ear ({confirmed.bars.length} bars). The arrangement will be checked against it note by note.</span>
+                <button type="button" onClick={() => setConfirmed(null)} className="underline">Remove</button>
+              </p>
+            ) : checking ? (
+              <div className="mt-2"><MelodyCheck request={request} provider={provider} onConfirm={(t) => { setConfirmed(t); setChecking(false); }} onCancel={() => setChecking(false)} /></div>
+            ) : (
+              <p className="mt-2 flex flex-wrap items-center gap-2 text-xs leading-relaxed text-ink-3">
+                Naming a song? Its melody comes from the model&apos;s memory.
+                <button type="button" disabled={!request.trim()} onClick={() => setChecking(true)} className="focus-ring rounded-full border border-accent px-2.5 py-1 font-medium text-accent disabled:opacity-40">
+                  ♪ Check the melody first
+                </button>
+              </p>
+            )}
           </>
         ) : (
           <>
@@ -199,6 +216,7 @@ export function Composer({ busy, onSubmit, initialFile }: { busy: boolean; onSub
           <span className="text-ink-3 transition group-open:rotate-180" aria-hidden>⌄</span>
         </summary>
         <div className="space-y-4 border-t border-line p-3">
+          {fingerstyle && <Segmented legend="Length" value={length} options={LENGTH_OPTS} onChange={setLength} />}
           {fingerstyle && <Segmented legend="Flair" value={flair} options={FLAIR_OPTS} onChange={setFlair} />}
           <Segmented legend="Level" value={difficulty} options={LEVEL_OPTS} onChange={setDifficulty} />
           <Segmented legend="Reharmonization" value={reharm} options={REHARM_OPTS} onChange={setReharm} />

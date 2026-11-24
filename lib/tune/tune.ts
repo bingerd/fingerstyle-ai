@@ -23,8 +23,18 @@ export const Tune = z.object({
   tempo: z.number(),
   timeSignature: z.object({ numerator: z.number().int(), denominator: z.number().int() }),
   bars: z.array(TuneBar),
+  /** "file" = imported (ground truth); "memory" = recalled by the model and confirmed by ear. */
+  source: z.enum(["file", "memory"]).optional(),
 });
 export type Tune = z.infer<typeof Tune>;
+
+/** A tune as raw note events (one track), e.g. to preview it through the MIDI → tab converter. */
+export function rawFromTune(tune: Tune, ppq = 480): RawScore {
+  const perBar = tune.timeSignature.numerator * (4 / tune.timeSignature.denominator);
+  const notes = tune.bars.flatMap((b, i) => b.melody.map((n) => ({ tick: Math.round((i * perBar + n.start) * ppq), durTicks: Math.round(n.dur * ppq), midi: n.midi })));
+  // Pad to the full length so trailing rests keep their bars.
+  return { title: tune.title, tempo: tune.tempo, ppq, timeSignature: tune.timeSignature, tracks: [{ name: "Melody", notes }] };
+}
 
 /** Neutral note-event format both importers produce before bar slicing. */
 export type RawTrack = { name: string; notes: { tick: number; durTicks: number; midi: number }[] };
