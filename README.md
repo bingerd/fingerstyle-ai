@@ -22,6 +22,12 @@ The tab is drawn by code, never by the model, so every fret number on screen has
 | 🎚️ **Steerable** | Optional controls: style, flair (clean → showstopper), level, reharmonization (none → bold), melody fidelity (exact / embellished / free), fretboard area. |
 | 🔁 **Editable** | Click any chord for 5 reharmonizations, previewed in context. Ask for revisions in plain words ("bar 6 is too much of a stretch"). Retake a direction, undo anything. |
 | 🎧 **Playable & readable** | Expressive playback (melody voiced over the bass, rolled chords, real slap/knock percussion), recorded nylon & steel guitars, tab with rhythm stems or tab + staff, chord diagrams, tempo trainer, metronome, count-in, looping, zoom, bars per line, full-screen practice view. |
+| 🎬 **Full pieces** | 32–48 bar arrangements (Intro · A · A′ · B · Climax · Outro) planned as a blueprint with one hook and a groove cell, then written section by section in parallel. |
+| ✋ **Fingerings** | Left-hand finger numbers and right-hand p-i-m-a for every note, computed deterministically (Viterbi over hand positions). |
+| ✨ **Signature moments** | Harmonic chimes, slap grooves, fast runs, campanella, taps and the finale detected automatically. One click loops them slowly, with a how-to tip. |
+| 🧗 **Practice path** | Per-bar difficulty heatmap, hardest spots first, a tempo ladder from 60% to 100%, and mastered steps saved with the song. |
+| 🎸 **Live fretboard** | Shows the notes being played with finger numbers, with the next notes ghosted. |
+| 👂 **Melody check** | For named songs: hear the melody the model remembers, confirm or nudge it, and the arrangement is then checked against it note by note. |
 | 📤 **Export** | Guitar Pro (.gp) for Guitar Pro 8 / MuseScore / TuxGuitar, MIDI, print/PDF. |
 | 📚 **Library** | Every arrangement you generate is saved automatically. Browse them as cards and filter by texture or by verified vs. from-memory melody. |
 | 🏛️ **Classical catalogue** | Optional local copy of [ClassTab.org](https://www.classtab.org/)'s ~4,000 classical guitar tabs: browse by composer, read the tab, and turn any piece with MIDI into a verified arrangement. |

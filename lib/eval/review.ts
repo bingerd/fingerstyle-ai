@@ -102,7 +102,7 @@ export function reviewSong(song: Song, opts: { tune?: Tune | null; prefs?: Prefs
   } else {
     criteria.push({
       key: "melody", label: "Melody kept", score: null, status: "unverified",
-      detail: "Written from the model's memory of the song, not checked against a score. Import a MIDI, Guitar Pro or MusicXML file to verify it note by note.",
+      detail: "No reference melody. For an original piece that's expected; for a named song the melody comes from the model's memory. Use \"Check the melody first\" or import a MIDI, Guitar Pro or MusicXML file to verify it note by note.",
     });
   }
 
