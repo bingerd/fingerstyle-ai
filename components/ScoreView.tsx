@@ -5,7 +5,7 @@ import type * as AlphaTabNS from "@coderline/alphatab";
 import type { Song } from "@/lib/ir/schema";
 import { songToAlphaTex, type GuitarSound, type StaffView } from "@/lib/alphatex/fromIR";
 
-import { loadAlphaTab, pickSoundFont } from "@/lib/client/alphatab";
+import { loadAlphaTab, pickSoundFont, recordedGuitars } from "@/lib/client/alphatab";
 import { downloadGp, humanize } from "@/lib/client/humanize";
 
 export type LoopRange = { startBar: number; endBar: number } | null;
@@ -38,7 +38,10 @@ export function ScoreView({
   const [expressive, setExpressive] = useState(true);
   const expressiveRef = useRef(true);
   const atRef = useRef<typeof AlphaTabNS | null>(null);
-  const [sound, setSound] = useState<GuitarSound>(song.texture === "fingerstyle" ? "nylon" : "steel");
+  const [sound, setSoundState] = useState<GuitarSound>(song.texture === "fingerstyle" ? "nylon" : "steel");
+  const [recorded, setRecorded] = useState({ nylon: false, steel: false });
+  const initialTexture = useRef(song.texture);
+  function setSound(s: GuitarSound) { setSoundState(s); writePrefs({ sound: s }); }
   const [ready, setReady] = useState(false);
   const [rendering, setRendering] = useState(true);
   const [playing, setPlaying] = useState(false);
@@ -88,13 +91,17 @@ export function ScoreView({
   // Create the API once.
   useEffect(() => {
     let disposed = false;
-    Promise.all([loadAlphaTab(), pickSoundFont()])
-      .then(([at, soundFontUrl]) => {
+    Promise.all([loadAlphaTab(), pickSoundFont(), recordedGuitars()])
+      .then(([at, soundFontUrl, rec]) => {
         if (disposed || !hostRef.current) return;
         const prefs = readPrefs();
         if (prefs.view) setViewState(prefs.view);
         if (prefs.scale) setScale(prefs.scale);
         if (prefs.barsPerRow) setBarsPerRow(prefs.barsPerRow);
+        setRecorded(rec);
+        const available = (s?: GuitarSound) => s && (s === "nylon-rec" ? rec.nylon : s === "steel-rec" ? rec.steel : true);
+        if (available(prefs.sound)) setSoundState(prefs.sound!);
+        else if (rec.nylon && initialTexture.current === "fingerstyle") setSoundState("nylon-rec");
         if (prefs.expressive === false) { setExpressive(false); expressiveRef.current = false; }
         atRef.current = at;
         const api = new at.AlphaTabApi(hostRef.current, {
@@ -120,6 +127,14 @@ export function ScoreView({
         api.renderStarted.on(() => setRendering(true));
         api.renderFinished.on(() => setRendering(false));
         api.playerReady.on(() => setReady(true));
+        // Layer the recorded guitars on top once the main soundfont is in (later presets win).
+        let layered = false;
+        api.soundFontLoaded.on(() => {
+          if (layered) return;
+          layered = true;
+          if (rec.nylon) api.loadSoundFont("/alphatab/freepats-nylon.sf2", true);
+          if (rec.steel) api.loadSoundFont("/alphatab/freepats-steel.sf2", true);
+        });
         api.midiLoaded.on(() => {
           applyLoop.current();
           if (pendingPlay.current) {
@@ -134,7 +149,7 @@ export function ScoreView({
           if (id) lookup.current.onChordClick(id);
         });
         api.error.on((e) => setError(e.message));
-        api.tex(texRef.current);
+        api.tex(texRef.current, [0]);
       })
       .catch((e: Error) => setError(e.message));
     return () => {
@@ -149,7 +164,7 @@ export function ScoreView({
     const api = apiRef.current;
     if (!api) return;
     api.stop();
-    api.tex(tex);
+    api.tex(tex, [0]);
   }, [tex]);
 
   // Zoom and bars-per-row need a re-layout, not a reload.
@@ -179,7 +194,7 @@ export function ScoreView({
     setExpressive(next);
     expressiveRef.current = next;
     writePrefs({ expressive: next });
-    apiRef.current?.tex(texRef.current); // reload so the change applies to sound
+    apiRef.current?.tex(texRef.current, [0]); // reload so the change applies to sound
   }
   function setRow(n: number) { setBarsPerRow(n); writePrefs({ barsPerRow: n }); }
   function toggleFullscreen() {
@@ -242,6 +257,8 @@ export function ScoreView({
             onChange={(e) => setSound(e.target.value as GuitarSound)}
             className="focus-ring h-9 rounded-full border border-line bg-surface px-3 text-sm text-ink"
           >
+            {recorded.nylon && <option value="nylon-rec">Nylon, recorded (FreePats)</option>}
+            {recorded.steel && <option value="steel-rec">Steel, recorded (FreePats)</option>}
             <option value="nylon">Nylon acoustic</option>
             <option value="steel">Steel acoustic</option>
             <option value="jazz">Jazz electric</option>
@@ -343,7 +360,7 @@ const PauseIcon = () => (
   <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden><path d="M3 1.5h3v11H3zM8 1.5h3v11H8z" fill="currentColor" /></svg>
 );
 
-type ReadingPrefs = { view?: StaffView; scale?: number; barsPerRow?: number; expressive?: boolean };
+type ReadingPrefs = { view?: StaffView; scale?: number; barsPerRow?: number; expressive?: boolean; sound?: GuitarSound };
 const PREFS_KEY = "woodshed.reading";
 function readPrefs(): ReadingPrefs {
   try { return JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as ReadingPrefs; } catch { return {}; }

@@ -21,7 +21,8 @@ The tab is drawn by code, never by the model, so every fret number on screen has
 | ✅ **Honest about accuracy** | Imported melodies are verified note by note. A song named from memory is marked **Unverified**. Every score is labelled *Verified*, *Estimated* or *Unverified*. |
 | 🎚️ **Steerable** | Optional controls: style, flair (clean → showstopper), level, reharmonization (none → bold), melody fidelity (exact / embellished / free), fretboard area. |
 | 🔁 **Editable** | Click any chord for 5 reharmonizations, previewed in context. Ask for revisions in plain words ("bar 6 is too much of a stretch"). Retake a direction, undo anything. |
-| 🎧 **Playable & readable** | Tab with rhythm stems or tab + staff, chord diagrams, guitar soundfonts (nylon, steel, jazz, clean), tempo trainer, metronome, count-in, looping, zoom, bars per line, full-screen practice view. |
+| 🎧 **Playable & readable** | Expressive playback (melody voiced over the bass, rolled chords, real slap/knock percussion), recorded nylon & steel guitars, tab with rhythm stems or tab + staff, chord diagrams, tempo trainer, metronome, count-in, looping, zoom, bars per line, full-screen practice view. |
+| 📤 **Export** | Guitar Pro (.gp) for Guitar Pro 8 / MuseScore / TuxGuitar, MIDI, print/PDF. |
 | 📚 **Library** | Every arrangement you generate is saved automatically. Browse them as cards and filter by texture or by verified vs. from-memory melody. |
 | 🏛️ **Classical catalogue** | Optional local copy of [ClassTab.org](https://www.classtab.org/)'s ~4,000 classical guitar tabs: browse by composer, read the tab, and turn any piece with MIDI into a verified arrangement. |
 
@@ -72,6 +73,10 @@ The **demo song** works without any model.
 # Much better guitar sounds (MIT-licensed MuseScore General, ~40 MB, git-ignored)
 curl -L -o public/alphatab/MuseScore_General.sf3 \
   https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General.sf3
+
+# Recorded guitars from FreePats (~22 MB download): nylon (CC0) and steel-string (GPL-3.0+).
+# Layered on top of the main soundfont; pick them in the score's Sound menu.
+npm run soundfonts:guitar
 
 # Audio import (MP3/WAV → MIDI with Spotify's basic-pitch). Needs uv.
 cd worker && uv sync --python 3.11
@@ -124,5 +129,5 @@ kept 99–100% of melody notes exactly (chance ≈ 24%) with zero repairs, both 
 [alphaTab](https://github.com/CoderLine/alphaTab) (MPL-2.0) for notation & playback ·
 [tonal](https://github.com/tonaljs/tonal) for music theory ·
 [basic-pitch](https://github.com/spotify/basic-pitch) (Apache-2.0) for audio → MIDI ·
-Sonivox (Apache-2.0) and [MuseScore General](https://musescore.org/en/handbook/3/soundfonts-and-sfz-files) (MIT) soundfonts ·
+Sonivox (Apache-2.0), [MuseScore General](https://musescore.org/en/handbook/3/soundfonts-and-sfz-files) (MIT) and [FreePats](https://freepats.zenvoid.org/) guitar (CC0 / GPL-3.0+) soundfonts ·
 built with Next.js, React and Tailwind.

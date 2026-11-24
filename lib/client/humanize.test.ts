@@ -51,3 +51,35 @@ describe("expressive playback", () => {
     expect(frets(back)).toEqual(frets(score));
   });
 });
+
+describe("percussion track", () => {
+  it("plays slaps and body knocks on a hidden GM drum track", () => {
+    const groove: Song = {
+      ...fingerstyle,
+      sections: [{ ...fingerstyle.sections[0], bars: [{
+        ...fingerstyle.sections[0].bars[0],
+        beats: [
+          { value: 4, dotted: false, triplet: false, percussion: "body", chord: "", notes: [{ string: 1, fret: 3, technique: "none" }] },
+          { value: 4, dotted: false, triplet: false, percussion: "slap", chord: "", notes: [] },
+          { value: 8, dotted: false, triplet: true, percussion: "none", chord: "", notes: [{ string: 2, fret: 1, technique: "none" }] },
+          { value: 8, dotted: false, triplet: true, percussion: "none", chord: "", notes: [{ string: 2, fret: 3, technique: "hammer" }] },
+          { value: 8, dotted: false, triplet: true, percussion: "slap", chord: "", notes: [] },
+          { value: 4, dotted: false, triplet: false, percussion: "slap", chord: "", notes: [] },
+        ],
+      }] }],
+    };
+    const { score } = load(groove);
+    expect(score.tracks).toHaveLength(2);
+    const perc = score.tracks[1];
+    expect(perc.staves[0].isPercussion).toBe(true);
+    const beats = perc.staves[0].bars[0].voices[0].beats;
+    const hits = beats.filter((b) => b.notes.length);
+    expect(hits.map((b) => perc.percussionArticulations[b.notes[0].percussionArticulation].outputMidiNumber)).toEqual([35, 37, 37, 37]);
+    // Same timing as the guitar bar.
+    const ends = (t: typeof perc) => t.staves[0].bars[0].voices[0].beats.map((b) => b.playbackStart);
+    expect(ends(perc)).toEqual(ends(score.tracks[0]));
+  });
+  it("adds no percussion track when there are no slaps or knocks", () => {
+    expect(load(fingerstyle).score.tracks).toHaveLength(1);
+  });
+});

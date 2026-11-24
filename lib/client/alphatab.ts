@@ -18,6 +18,13 @@ export function loadAlphaTab(): Promise<AlphaTab> {
   }));
 }
 
+/** Recorded FreePats guitars layered on top of the main soundfont, when installed. */
+let extras: Promise<{ nylon: boolean; steel: boolean }> | null = null;
+export function recordedGuitars(): Promise<{ nylon: boolean; steel: boolean }> {
+  const has = (f: string) => fetch(`/alphatab/${f}`, { method: "HEAD" }).then((r) => r.ok).catch(() => false);
+  return (extras ??= Promise.all([has("freepats-nylon.sf2"), has("freepats-steel.sf2")]).then(([nylon, steel]) => ({ nylon, steel })));
+}
+
 /** Prefer the full MuseScore General soundfont (real nylon/steel/jazz guitars) when it's installed. */
 let soundFont: Promise<string> | null = null;
 export function pickSoundFont(): Promise<string> {

@@ -41,6 +41,7 @@ yarn-error.log*
 next-env.d.ts
 data/songs/
 public/alphatab/MuseScore_General.sf3
+public/alphatab/freepats-*.sf2
 worker/.venv/
 eval/results/*.json
 !.env.example

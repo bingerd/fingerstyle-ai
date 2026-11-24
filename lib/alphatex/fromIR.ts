@@ -67,9 +67,10 @@ function noteToken(n: TabNote, lastOnString: Map<number, NoteToken>): NoteToken 
 }
 
 export type StaffView = "both" | "tabs" | "score";
-export type GuitarSound = "nylon" | "steel" | "jazz" | "clean";
+/** "*-rec" = FreePats recorded guitars (npm run soundfonts:guitar), installed as spare GM programs 105/106. */
+export type GuitarSound = "nylon" | "steel" | "jazz" | "clean" | "nylon-rec" | "steel-rec";
 /** General MIDI programs (0-based). */
-const PROGRAM: Record<GuitarSound, number> = { nylon: 24, steel: 25, jazz: 26, clean: 27 };
+export const PROGRAM: Record<GuitarSound, number> = { nylon: 24, steel: 25, jazz: 26, clean: 27, "nylon-rec": 105, "steel-rec": 106 };
 
 /** Strum direction: down on the beat, up on off-beats — like a real right hand. */
 const brush = (pos: number) => (Math.abs(pos - Math.round(pos)) < 1e-6 ? "bd" : "bu");
@@ -102,6 +103,9 @@ export function songToAlphaTex(
 
   const beatRefs: BeatRef[] = [];
   const bars: string[] = [];
+  // Hidden second track: real drum sounds for thumb slaps and body knocks (the tab shows them as x notes).
+  const percBars: string[] = [];
+  const hasPercussion = song.sections.some((s) => s.bars.some((b) => b.beats.some((bt) => bt.percussion !== "none")));
   // Last rendered note per string: hammer-ons, pull-offs and slides are marked on the origin note.
   const lastNote = new Map<number, NoteToken>();
   let barIndex = 0;
@@ -157,6 +161,15 @@ export function songToAlphaTex(
           });
         }
       }
+      if (hasPercussion)
+        percBars.push(bar.beats.length
+          ? bar.beats.map((b) => {
+              const dur = [...(b.dotted ? ["d"] : []), ...(b.triplet ? ["tu 3"] : [])];
+              if (b.percussion === "none") return `r.${b.value}${dur.length ? ` {${dur.join(" ")}}` : ""}`;
+              const [sound, dy] = b.percussion === "slap" ? ["Snare (side stick)", "mf"] : ["Kick (hit)", "mp"];
+              return `"${sound}".${b.value} {${[...dur, `dy ${dy}`].join(" ")}}`;
+            }).join(" ")
+          : `r.1`);
       const rendered = beats.map((x) =>
         typeof x === "string" ? x : beatTex(x.tokens.map((t) => `${t.head}${t.effects.length ? `{${t.effects.join(" ")}}` : ""}`), x.beat, x.props),
       );
@@ -165,7 +178,8 @@ export function songToAlphaTex(
     });
   });
 
-  return { tex: `${header.join("\n")}\n${bars.join(" |\n")}`, beatRefs };
+  const perc = hasPercussion ? `\n\\track "Percussion"\n\\instrument percussion\n\\articulation defaults\n${percBars.join(" |\n")}` : "";
+  return { tex: `${header.join("\n")}\n${bars.join(" |\n")}${perc}`, beatRefs };
 }
 
 /** Bar index (0-based, across the whole song) of every chord id. */

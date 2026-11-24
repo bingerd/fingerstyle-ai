@@ -35,7 +35,15 @@ export function humanize(at: AT, score: AlphaTabNS.model.Score) {
 /** Download a Guitar Pro 7 file of the rendered score (opens in Guitar Pro, MuseScore, TuxGuitar). */
 export function downloadGp(at: AT, api: AlphaTabNS.AlphaTabApi, title: string) {
   if (!api.score) return;
-  const bytes = new at.exporter.Gp7Exporter().export(api.score, api.settings);
+  // The recorded-guitar sounds live on spare programs locally; export them as standard nylon/steel.
+  const programs = api.score.tracks.map((t) => t.playbackInfo.program);
+  for (const t of api.score.tracks) t.playbackInfo.program = ({ 105: 24, 106: 25 } as Record<number, number>)[t.playbackInfo.program] ?? t.playbackInfo.program;
+  let bytes: Uint8Array;
+  try {
+    bytes = new at.exporter.Gp7Exporter().export(api.score, api.settings);
+  } finally {
+    api.score.tracks.forEach((t, i) => { t.playbackInfo.program = programs[i]; });
+  }
   const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/octet-stream" }));
   const a = Object.assign(document.createElement("a"), { href: url, download: `${title.replace(/[^\w\- ]+/g, "").trim() || "arrangement"}.gp` });
   a.click();
