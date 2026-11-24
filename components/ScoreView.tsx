@@ -6,6 +6,7 @@ import type { Song } from "@/lib/ir/schema";
 import { songToAlphaTex, type GuitarSound, type StaffView } from "@/lib/alphatex/fromIR";
 
 import { loadAlphaTab, pickSoundFont } from "@/lib/client/alphatab";
+import { downloadGp, humanize } from "@/lib/client/humanize";
 
 export type LoopRange = { startBar: number; endBar: number } | null;
 
@@ -34,6 +35,9 @@ export function ScoreView({
   const [scale, setScale] = useState(1.25);
   const [barsPerRow, setBarsPerRow] = useState(-1);
   const [fullscreen, setFullscreen] = useState(false);
+  const [expressive, setExpressive] = useState(true);
+  const expressiveRef = useRef(true);
+  const atRef = useRef<typeof AlphaTabNS | null>(null);
   const [sound, setSound] = useState<GuitarSound>(song.texture === "fingerstyle" ? "nylon" : "steel");
   const [ready, setReady] = useState(false);
   const [rendering, setRendering] = useState(true);
@@ -91,6 +95,8 @@ export function ScoreView({
         if (prefs.view) setViewState(prefs.view);
         if (prefs.scale) setScale(prefs.scale);
         if (prefs.barsPerRow) setBarsPerRow(prefs.barsPerRow);
+        if (prefs.expressive === false) { setExpressive(false); expressiveRef.current = false; }
+        atRef.current = at;
         const api = new at.AlphaTabApi(hostRef.current, {
           core: { fontDirectory: "/alphatab/font/", engine: "svg" },
           display: { scale: prefs.scale ?? 1.25, barsPerRow: prefs.barsPerRow ?? -1, layoutMode: at.LayoutMode.Page, padding: [24, 32, 24, 32] },
@@ -103,6 +109,9 @@ export function ScoreView({
           },
         } as AlphaTabNS.json.SettingsJson);
         apiRef.current = api;
+        api.settings.notation.elements.set(at.NotationElement.EffectDynamics, false);
+        api.updateSettings();
+        api.scoreLoaded.on((score) => { if (expressiveRef.current) humanize(at, score); });
         const toChord = (beat: AlphaTabNS.model.Beat) => {
           const { beatRefs, barOffsets } = lookup.current;
           const ref = beatRefs[(barOffsets[beat.voice.bar.index] ?? 0) + beat.index];
@@ -164,6 +173,13 @@ export function ScoreView({
     const next = Math.round(Math.min(2, Math.max(0.8, scale + delta)) * 100) / 100;
     setScale(next);
     writePrefs({ scale: next });
+  }
+  function toggleExpressive() {
+    const next = !expressive;
+    setExpressive(next);
+    expressiveRef.current = next;
+    writePrefs({ expressive: next });
+    apiRef.current?.tex(texRef.current); // reload so the change applies to sound
   }
   function setRow(n: number) { setBarsPerRow(n); writePrefs({ barsPerRow: n }); }
   function toggleFullscreen() {
@@ -265,6 +281,27 @@ export function ScoreView({
             ))}
           </span>
         </span>
+        <button
+          onClick={toggleExpressive} aria-pressed={expressive}
+          title="Melody louder than bass, soft inner voices, rolled big chords"
+          className={`focus-ring h-8 rounded-full border px-3 ${expressive ? "border-accent bg-accent-soft text-ink" : "border-line hover:bg-surface-2"}`}
+        >
+          Expressive playback
+        </button>
+        <details className="relative">
+          <summary className="focus-ring flex h-8 cursor-pointer list-none items-center rounded-full border border-line px-3 hover:bg-surface-2">Export ▾</summary>
+          <div className="absolute z-10 mt-1 flex w-56 flex-col rounded-xl border border-line bg-surface p-1 text-sm shadow-lg">
+            <button onClick={() => atRef.current && apiRef.current && downloadGp(atRef.current, apiRef.current, song.title)} className="rounded-lg px-3 py-2 text-left hover:bg-surface-2">
+              Guitar Pro file (.gp)<span className="block text-xs text-ink-3">Guitar Pro 8, MuseScore, TuxGuitar</span>
+            </button>
+            <button onClick={() => apiRef.current?.downloadMidi()} className="rounded-lg px-3 py-2 text-left hover:bg-surface-2">
+              MIDI file (.mid)<span className="block text-xs text-ink-3">Any DAW or sampler</span>
+            </button>
+            <button onClick={() => apiRef.current?.print()} className="rounded-lg px-3 py-2 text-left hover:bg-surface-2">
+              Print / PDF<span className="block text-xs text-ink-3">Opens a print view</span>
+            </button>
+          </div>
+        </details>
         <button onClick={toggleFullscreen} className="focus-ring ml-auto h-8 rounded-full border border-line px-3 hover:bg-surface-2">
           {fullscreen ? "Exit practice view" : "⛶ Practice view"}
         </button>
@@ -306,7 +343,7 @@ const PauseIcon = () => (
   <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden><path d="M3 1.5h3v11H3zM8 1.5h3v11H8z" fill="currentColor" /></svg>
 );
 
-type ReadingPrefs = { view?: StaffView; scale?: number; barsPerRow?: number };
+type ReadingPrefs = { view?: StaffView; scale?: number; barsPerRow?: number; expressive?: boolean };
 const PREFS_KEY = "woodshed.reading";
 function readPrefs(): ReadingPrefs {
   try { return JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as ReadingPrefs; } catch { return {}; }
