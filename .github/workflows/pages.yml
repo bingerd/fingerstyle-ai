@@ -31,6 +31,9 @@ jobs:
         run: |
           curl -fsSL -o public/alphatab/MuseScore_General.sf3 https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General.sf3
           FREEPATS=nylon npx tsx scripts/soundfonts.mts
+      # Route types (RouteContext) for the whole app, so the type check passes on a fresh checkout.
+      - run: npx next typegen
+      - run: npx tsc --noEmit
       - run: npx next build
         env:
           SHOWCASE: "1"

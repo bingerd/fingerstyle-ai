@@ -7,7 +7,9 @@ import type { NextConfig } from "next";
 const showcase = process.env.SHOWCASE === "1";
 
 const nextConfig: NextConfig = {
-  ...(showcase && { output: "export", pageExtensions: ["showcase.tsx"], images: { unoptimized: true }, distDir: "showcase-out" }),
+  // The showcase build only sees its own routes, so its type check would miss the API's route types;
+  // CI type-checks the whole app (next typegen + tsc) before this build instead.
+  ...(showcase && { output: "export", pageExtensions: ["showcase.tsx"], images: { unoptimized: true }, distDir: "showcase-out", typescript: { ignoreBuildErrors: true } }),
   // Partial prerendering features need a server; the static showcase export turns them off.
   cacheComponents: !showcase,
   partialPrefetching: !showcase,
